@@ -141,7 +141,7 @@ export default function App() {
       socket.off('join_confirmed');
       socket.off('cheer_event');
     };
-  }, []);
+  }, [roomId]);
 
   // Sound toggles
   const handleToggleMute = () => {

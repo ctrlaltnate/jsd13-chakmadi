@@ -56,7 +56,7 @@ export default function PullController({
 
     // Emit pull to server
     socketService.pull();
-  }, [roundActive, playerStatus, onTriggerShake]);
+  }, [roundActive, playerStatus]);
 
   // Pointer Down (Click / Tap) - Requires releasing before pulling again
   const handlePointerDown = (e) => {
