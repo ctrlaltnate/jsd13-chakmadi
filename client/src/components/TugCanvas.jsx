@@ -9,6 +9,12 @@ export default function TugCanvas({
 }) {
   const canvasRef = useRef(null);
   const animFrameRef = useRef(null);
+  const targetRopePosRef = useRef(ropePos);
+  const currentRopePosRef = useRef(ropePos);
+
+  useEffect(() => {
+    targetRopePosRef.current = ropePos;
+  }, [ropePos]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -19,6 +25,11 @@ export default function TugCanvas({
 
     const render = () => {
       tick++;
+
+      // Silky-smooth 60fps/120fps frame interpolation (lerp)
+      currentRopePosRef.current += (targetRopePosRef.current - currentRopePosRef.current) * 0.22;
+      const smoothRope = currentRopePosRef.current;
+
       const width = canvas.width;
       const height = canvas.height;
 
@@ -88,15 +99,15 @@ export default function TugCanvas({
       // 4. Calculate dynamic rope marker position
       // -100 maps to pitLeft (Red wins), +100 maps to pitRight (Blue wins)
       const maxDisplacement = (width * 0.38);
-      const ropeMarkerX = centerX + (ropePos / 100) * maxDisplacement;
+      const ropeMarkerX = centerX + (smoothRope / 100) * maxDisplacement;
       const ropeY = groundY - 32;
 
       // 5. Draw 8-Bit Rope
-      const leftAnchorX = Math.max(30, centerX - width * 0.44 + (ropePos / 100) * 40);
-      const rightAnchorX = Math.min(width - 30, centerX + width * 0.44 + (ropePos / 100) * 40);
+      const leftAnchorX = Math.max(30, centerX - width * 0.44 + (smoothRope / 100) * 40);
+      const rightAnchorX = Math.min(width - 30, centerX + width * 0.44 + (smoothRope / 100) * 40);
 
       // Calculate rope sag based on tension (faster movement or near center = more taut)
-      const sag = Math.max(2, 10 - Math.abs(ropePos) * 0.08 + Math.sin(tick * 0.3) * 1.5);
+      const sag = Math.max(2, 10 - Math.abs(smoothRope) * 0.08 + Math.sin(tick * 0.3) * 1.5);
 
       ctx.beginPath();
       ctx.moveTo(leftAnchorX, ropeY);
@@ -150,7 +161,7 @@ export default function TugCanvas({
 
       for (let i = 0; i < redCount; i++) {
         const charX = redBaseX - (i * 32) - 10;
-        const isLosing = winnerTeam === 'blue' || ropePos > 85;
+        const isLosing = winnerTeam === 'blue' || smoothRope > 85;
         const strain = Math.sin((tick + i * 20) * 0.3) * 3;
         drawPixelTugger(ctx, charX, groundY, 'red', strain, isLosing, tick);
       }
@@ -161,7 +172,7 @@ export default function TugCanvas({
 
       for (let i = 0; i < blueCount; i++) {
         const charX = blueBaseX + (i * 32) + 10;
-        const isLosing = winnerTeam === 'red' || ropePos < -85;
+        const isLosing = winnerTeam === 'red' || smoothRope < -85;
         const strain = Math.sin((tick + i * 20 + 10) * 0.3) * 3;
         drawPixelTugger(ctx, charX, groundY, 'blue', strain, isLosing, tick);
       }

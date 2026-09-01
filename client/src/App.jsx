@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { socketService } from './services/socket';
 import { soundService } from './services/sound';
 import JoinModal from './components/JoinModal';
 import LobbyScreen from './components/LobbyScreen';
 import Scoreboard from './components/Scoreboard';
 import TugCanvas from './components/TugCanvas';
-import TeamRosters from './components/TeamRosters';
+import TeamRosters, { TeamPanel } from './components/TeamRosters';
 import PullController from './components/PullController';
 import RoundStartingModal from './components/RoundStartingModal';
 import RoundSummaryScreen from './components/RoundSummaryScreen';
@@ -15,7 +15,7 @@ export default function App() {
   const [gameState, setGameState] = useState({
     status: 'LOBBY',
     roundNumber: 1,
-    roundDuration: 25,
+    roundDuration: 60,
     roundStartTime: 0,
     roundEndTime: 0,
     countdownStartTime: 0,
@@ -39,10 +39,11 @@ export default function App() {
   const [playerName, setPlayerName] = useState('');
   const [playerAvatar, setPlayerAvatar] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
-  const [bgmActive, setBgmActive] = useState(false);
-  const [scanlines, setScanlines] = useState(true);
-  const [screenShake, setScreenShake] = useState(false);
+  const [bgmActive, setBgmActive] = useState(true);
+  const [scanlines, setScanlines] = useState(false);
   const [cheerParticles, setCheerParticles] = useState([]);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameInput, setEditNameInput] = useState('');
 
   // Socket event listeners
   useEffect(() => {
@@ -50,7 +51,6 @@ export default function App() {
 
     socket.on('connect', () => {
       setCurrentSocketId(socket.id);
-      // Check saved session
       const savedName = localStorage.getItem('tug_player_name');
       const savedAvatar = parseInt(localStorage.getItem('tug_player_avatar') || '0', 10);
       if (savedName) {
@@ -74,7 +74,9 @@ export default function App() {
         teamRedScore: tick.teamRedScore,
         teamBlueScore: tick.teamBlueScore,
         teamRedPulls: tick.teamRedPulls,
-        teamBluePulls: tick.teamBluePulls
+        teamBluePulls: tick.teamBluePulls,
+        teamRedCount: tick.teamRedCount ?? prev.teamRedCount,
+        teamBlueCount: tick.teamBlueCount ?? prev.teamBlueCount
       }));
     });
 
@@ -88,7 +90,6 @@ export default function App() {
     });
 
     socket.on('cheer_event', ({ team, emote, from }) => {
-      // Spawn floating cheer particle on the canvas
       const particleId = Date.now() + Math.random();
       const x = team === 'red' ? 120 + Math.random() * 100 : 580 + Math.random() * 100;
       const y = 140 + Math.random() * 60;
@@ -107,12 +108,6 @@ export default function App() {
     };
   }, []);
 
-  // Screen shake trigger
-  const triggerShake = () => {
-    setScreenShake(true);
-    setTimeout(() => setScreenShake(false), 260);
-  };
-
   // Sound toggles
   const handleToggleMute = () => {
     const muted = soundService.toggleMute();
@@ -130,64 +125,154 @@ export default function App() {
     }
   };
 
+  // Auto-start BGM on page load or upon first user touch/click (browser autoplay policy)
+  useEffect(() => {
+    if (bgmActive && !isMuted) {
+      soundService.startBGM();
+      const unlockAudio = () => {
+        soundService.startBGM();
+        window.removeEventListener('pointerdown', unlockAudio);
+        window.removeEventListener('keydown', unlockAudio);
+      };
+      window.addEventListener('pointerdown', unlockAudio);
+      window.addEventListener('keydown', unlockAudio);
+
+      return () => {
+        window.removeEventListener('pointerdown', unlockAudio);
+        window.removeEventListener('keydown', unlockAudio);
+      };
+    } else {
+      soundService.stopBGM();
+    }
+  }, [bgmActive, isMuted]);
+
+  // Leave Game handler
+  const handleLeaveGame = () => {
+    if (window.confirm('คุณต้องการออกจากเกมหรือไม่? (Are you sure you want to leave the game?)')) {
+      soundService.playWarning();
+      socketService.leaveGame();
+      localStorage.removeItem('tug_player_name');
+      localStorage.removeItem('tug_player_avatar');
+      setHasJoined(false);
+      setPlayerName('');
+      setShowJoinModal(true);
+    }
+  };
+
+  // Name edit handlers
+  const handleStartEditName = () => {
+    setEditNameInput(myPlayer?.name || playerName);
+    setIsEditingName(true);
+  };
+
+  const handleSaveEditName = (e) => {
+    if (e) e.preventDefault();
+    const clean = editNameInput.trim();
+    if (!clean) return;
+    socketService.updateName(clean);
+    socketService.joinGame(clean, playerAvatar);
+    localStorage.setItem('tug_player_name', clean);
+    setPlayerName(clean);
+    setIsEditingName(false);
+    soundService.playCheer();
+  };
+
   // Find current player info
   const myPlayer = gameState.players.find((p) => p.id === currentSocketId);
   const isHost = gameState.hostSocketId === currentSocketId;
   const activeSurvivors = gameState.players.filter((p) => p.status === 'active');
 
   return (
-    <div className={`relative min-h-screen bg-[#090b13] text-gray-100 flex flex-col justify-between ${screenShake ? 'shake' : ''}`}>
+    <div className="relative min-h-screen min-h-dvh bg-[#070912] text-white flex flex-col justify-between">
       {/* CRT Scanline Overlay */}
       {scanlines && <div className="fixed inset-0 scanlines pointer-events-none z-50"></div>}
 
-      {/* Top Retro Marquee Bar */}
-      <header className="sticky top-0 z-40 bg-[#121626]/95 backdrop-blur-xs border-b-4 border-[#3b4261] px-3 py-2 select-none shadow-md">
-        <div className="max-w-5xl mx-auto flex items-center justify-between gap-2">
-          {/* Title & Badge */}
+      {/* Top Retro Header Bar */}
+      <header className="sticky top-0 z-40 bg-[#0f1322]/95 backdrop-blur-xs border-b-3 border-[#334155] px-2.5 sm:px-4 py-2 select-none shadow-md">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
+          {/* Logo & Title */}
           <div className="flex items-center gap-2">
             <span className="text-xl sm:text-2xl animate-pulse">🥊</span>
             <div>
-              <div className="font-pixel text-[11px] sm:text-xs text-yellow-400 tracking-wider">
+              <div className="font-arcade text-xs sm:text-sm text-white pixel-text-shadow">
                 CROWD TUG-OF-WAR
               </div>
-              <div className="font-retro text-xs text-gray-400">
+              <div className="font-ui text-[11px] text-yellow-300 font-bold hidden xs:block">
                 PHYSICS EDITION
               </div>
             </div>
           </div>
 
           {/* Player Badge & Audio/Visual Toggles */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {myPlayer && (
-              <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 bg-gray-900 border border-gray-700 text-xs font-pixel text-yellow-300">
-                <span>⭐</span>
-                <span className="truncate max-w-[100px]">{myPlayer.name}</span>
-                {myPlayer.team && (
-                  <span className={`px-1 py-0.5 text-[8px] uppercase ${myPlayer.team === 'red' ? 'bg-red-800 text-red-100' : 'bg-blue-800 text-blue-100'}`}>
-                    {myPlayer.team}
-                  </span>
-                )}
-              </div>
+              isEditingName ? (
+                <form onSubmit={handleSaveEditName} className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={editNameInput}
+                    onChange={(e) => setEditNameInput(e.target.value)}
+                    maxLength={14}
+                    autoFocus
+                    placeholder="ชื่อใหม่..."
+                    className="px-2 py-0.5 bg-[#090c14] border-2 border-yellow-400 text-white font-ui font-extrabold text-xs outline-hidden w-24 sm:w-32 shadow-inner"
+                  />
+                  <button
+                    type="submit"
+                    title="กดเพื่อบันทึกชื่อ (Save Name)"
+                    className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white font-ui font-extrabold text-xs pixel-btn cursor-pointer"
+                  >
+                    💾 บันทึก
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingName(false)}
+                    title="ยกเลิก (Cancel)"
+                    className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 text-white font-ui font-bold text-xs pixel-btn cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </form>
+              ) : (
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-[#171c2f] border border-gray-600 text-xs font-ui font-extrabold text-white">
+                  <span>⭐</span>
+                  <span className="truncate max-w-[80px] sm:max-w-[120px]">{myPlayer.name}</span>
+                  {myPlayer.team && (
+                    <span className={`px-1 text-[10px] uppercase font-arcade ${myPlayer.team === 'red' ? 'bg-red-700 text-white' : 'bg-blue-700 text-white'}`}>
+                      {myPlayer.team}
+                    </span>
+                  )}
+                  {/* Pencil Edit Button */}
+                  <button
+                    type="button"
+                    onClick={handleStartEditName}
+                    title="กดดินสอเพื่อแก้ไขชื่อ (Edit Name)"
+                    className="ml-1 text-yellow-400 hover:text-yellow-300 hover:scale-125 transition-transform cursor-pointer p-0.5"
+                  >
+                    ✏️
+                  </button>
+                </div>
+              )
             )}
 
             {/* CRT Toggle */}
             <button
               type="button"
               onClick={() => setScanlines(!scanlines)}
-              title="Toggle CRT Scanline Effect"
-              className={`px-2 py-1 text-[10px] font-pixel pixel-btn cursor-pointer ${scanlines ? 'pixel-btn-gold text-black' : ''}`}
+              title="Toggle CRT Scanlines"
+              className={`px-2 py-1 text-xs font-ui font-extrabold pixel-btn cursor-pointer ${scanlines ? 'pixel-btn-gold text-black' : ''}`}
             >
               CRT
             </button>
 
-            {/* Sound Mute Button */}
+            {/* SFX Mute Button */}
             <button
               type="button"
               onClick={handleToggleMute}
               title="Toggle Sound Effects"
-              className={`px-2 py-1 text-[10px] font-pixel pixel-btn cursor-pointer ${isMuted ? 'opacity-50' : 'pixel-btn-green'}`}
+              className={`px-2 py-1 text-xs font-ui font-extrabold pixel-btn cursor-pointer ${isMuted ? 'opacity-60' : 'pixel-btn-green text-white'}`}
             >
-              {isMuted ? '🔇 MUTE' : '🔊 SFX'}
+              {isMuted ? '🔇 เสียงปิด' : '🔊 SFX'}
             </button>
 
             {/* BGM Toggle */}
@@ -195,16 +280,28 @@ export default function App() {
               type="button"
               onClick={handleToggleBGM}
               title="Toggle 8-Bit Chiptune Music"
-              className={`px-2 py-1 text-[10px] font-pixel pixel-btn cursor-pointer ${bgmActive ? 'pixel-btn-gold text-black' : ''}`}
+              className={`px-2 py-1 text-xs font-ui font-extrabold pixel-btn cursor-pointer ${bgmActive ? 'pixel-btn-gold text-black' : ''}`}
             >
               🎵 BGM
             </button>
+
+            {/* Leave Game Button */}
+            {hasJoined && (
+              <button
+                type="button"
+                onClick={handleLeaveGame}
+                title="ออกจากเกม (Leave Game)"
+                className="px-2 py-1 text-xs font-ui font-extrabold pixel-btn pixel-btn-red text-white cursor-pointer"
+              >
+                🚪 ออกจากเกม
+              </button>
+            )}
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-5xl w-full mx-auto p-3 sm:p-4 flex flex-col justify-center">
+      <main className="flex-1 max-w-6xl w-full mx-auto p-2 sm:p-3 flex flex-col justify-center">
         {/* LOBBY STATE */}
         {gameState.status === 'LOBBY' && (
           <LobbyScreen
@@ -213,6 +310,7 @@ export default function App() {
             roundDuration={gameState.roundDuration}
             currentSocketId={currentSocketId}
             localIp={gameState.localIp}
+            onLeaveGame={handleLeaveGame}
           />
         )}
 
@@ -226,6 +324,8 @@ export default function App() {
               teamBlueScore={0}
               teamRedPulls={0}
               teamBluePulls={0}
+              teamRedCount={gameState.players.filter((p) => p.team === 'red').length}
+              teamBlueCount={gameState.players.filter((p) => p.team === 'blue').length}
               ropePos={0}
               status="ROUND_STARTING"
             />
@@ -243,41 +343,69 @@ export default function App() {
           </>
         )}
 
-        {/* ROUND ACTIVE STATE */}
+        {/* ROUND ACTIVE STATE - 3-Column layout on desktop, stacked on mobile */}
         {gameState.status === 'ROUND_ACTIVE' && (
-          <div className="space-y-2">
-            <Scoreboard
-              roundNumber={gameState.roundNumber}
-              survivorCount={activeSurvivors.length}
-              teamRedScore={gameState.teamRedScore}
-              teamBlueScore={gameState.teamBlueScore}
-              teamRedPulls={gameState.teamRedPulls}
-              teamBluePulls={gameState.teamBluePulls}
-              ropePos={gameState.ropePos}
-              roundStartTime={gameState.roundStartTime}
-              roundEndTime={gameState.roundEndTime}
-              status="ROUND_ACTIVE"
-            />
+          <div className="w-full flex flex-col lg:flex-row items-stretch justify-center gap-3">
+            {/* LEFT SIDEBAR: TEAM RED (DESKTOP) */}
+            <div className="hidden lg:block w-60 xl:w-68 shrink-0">
+              <TeamPanel
+                team="red"
+                players={gameState.players}
+                currentSocketId={currentSocketId}
+              />
+            </div>
 
-            <TugCanvas
-              ropePos={gameState.ropePos}
-              teamRedCount={gameState.players.filter((p) => p.team === 'red').length}
-              teamBlueCount={gameState.players.filter((p) => p.team === 'blue').length}
-              winnerTeam={null}
-              cheerParticles={cheerParticles}
-            />
+            {/* CENTER ARENA: SCOREBOARD, CANVAS & CONTROLLER */}
+            <div className="flex-1 max-w-2xl w-full mx-auto flex flex-col space-y-2">
+              {/* 1. Central Scoreboard with dynamic leader highlight */}
+              <Scoreboard
+                roundNumber={gameState.roundNumber}
+                survivorCount={activeSurvivors.length}
+                teamRedScore={gameState.teamRedScore}
+                teamBlueScore={gameState.teamBlueScore}
+                teamRedPulls={gameState.teamRedPulls}
+                teamBluePulls={gameState.teamBluePulls}
+                teamRedCount={gameState.teamRedCount || gameState.players.filter((p) => p.team === 'red').length}
+                teamBlueCount={gameState.teamBlueCount || gameState.players.filter((p) => p.team === 'blue').length}
+                ropePos={gameState.ropePos}
+                roundStartTime={gameState.roundStartTime}
+                roundEndTime={gameState.roundEndTime}
+                status="ROUND_ACTIVE"
+              />
 
-            <TeamRosters
-              players={gameState.players}
-              currentSocketId={currentSocketId}
-            />
+              {/* 2. Tug Canvas Arena */}
+              <TugCanvas
+                ropePos={gameState.ropePos}
+                teamRedCount={gameState.players.filter((p) => p.team === 'red').length}
+                teamBlueCount={gameState.players.filter((p) => p.team === 'blue').length}
+                winnerTeam={null}
+                cheerParticles={cheerParticles}
+              />
 
-            <PullController
-              playerStatus={myPlayer?.status || 'spectator'}
-              playerTeam={myPlayer?.team}
-              roundActive={true}
-              onTriggerShake={triggerShake}
-            />
+              {/* 3. Giant Pull Controller with Spacebar & local button shake */}
+              <PullController
+                playerStatus={myPlayer?.status || 'spectator'}
+                playerTeam={myPlayer?.team}
+                roundActive={true}
+              />
+
+              {/* 4. Dual Team Rosters (Visible only on mobile/tablet screens) */}
+              <div className="lg:hidden">
+                <TeamRosters
+                  players={gameState.players}
+                  currentSocketId={currentSocketId}
+                />
+              </div>
+            </div>
+
+            {/* RIGHT SIDEBAR: TEAM BLUE (DESKTOP) */}
+            <div className="hidden lg:block w-60 xl:w-68 shrink-0">
+              <TeamPanel
+                team="blue"
+                players={gameState.players}
+                currentSocketId={currentSocketId}
+              />
+            </div>
           </div>
         )}
 
@@ -289,6 +417,7 @@ export default function App() {
             eliminated={gameState.eliminatedThisRound}
             survivors={gameState.survivorsThisRound}
             currentSocketId={currentSocketId}
+            onLeaveGame={handleLeaveGame}
           />
         )}
 
@@ -299,13 +428,14 @@ export default function App() {
             players={gameState.players}
             isHost={isHost}
             currentSocketId={currentSocketId}
+            onLeaveGame={handleLeaveGame}
           />
         )}
       </main>
 
-      {/* Footer info bar */}
-      <footer className="bg-[#0b0e18] border-t-2 border-gray-800 py-2 px-4 text-center font-retro text-xs sm:text-sm text-gray-500">
-        <span>8-BIT CROWD TUG-OF-WAR • REAL-TIME WEBSOCKET TIME SYNCHRONIZATION • ANTI-AUTOCLICKER PROTECTED</span>
+      {/* Footer bar */}
+      <footer className="bg-[#090b14] border-t border-gray-800 py-1.5 px-3 text-center font-ui text-xs text-white">
+        <span>🎮 CROWD TUG-OF-WAR • REAL-TIME WEBSOCKET • UNLIMITED SPEED • FAIR PLAY</span>
       </footer>
 
       {/* Player Join Name Modal */}

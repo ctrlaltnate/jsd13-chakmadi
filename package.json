@@ -4,9 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "install-all": "npm install && cd client && npm install && cd ../server && npm install",
+    "build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
+    "render-build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
+    "start": "node server/index.js",
     "server": "node server/index.js",
     "client": "npm --prefix client run dev",
-    "build": "npm --prefix client run build",
     "dev": "node run.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
   }
 }

@@ -18,7 +18,7 @@ export default function RoundStartingModal({ countdownStartTime, playerTeam }) {
         soundService.playBeep(true);
         clearInterval(interval);
       }
-    }, 500);
+    }, 450);
 
     return () => clearInterval(interval);
   }, [countdownStartTime]);
@@ -26,33 +26,33 @@ export default function RoundStartingModal({ countdownStartTime, playerTeam }) {
   const isRed = playerTeam === 'red';
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 backdrop-blur-xs select-none">
-      <div className="pixel-card p-6 sm:p-10 text-center max-w-md w-full animate-bounce">
-        <div className="inline-block px-3 py-1 mb-3 bg-yellow-400 text-black font-pixel text-xs font-bold uppercase pixel-border">
-          ROUND STARTING!
+    <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs select-none">
+      <div className="pixel-card p-6 sm:p-8 text-center max-w-sm w-full animate-bounce border-4 border-yellow-400 bg-[#101424]">
+        <div className="inline-block px-3 py-1 mb-2 bg-yellow-400 text-black font-ui text-xs font-extrabold uppercase pixel-border">
+          ROUND STARTING! (กำลังเริ่มการแข่งขัน)
+        </div>
+
+        <div className="my-2">
+          <div className="font-ui text-sm text-gray-300 font-bold mb-1">
+            คุณได้รับมอบหมายให้อยู่:
+          </div>
+          <div
+            className={`font-arcade text-2xl sm:text-3xl font-extrabold uppercase ${
+              isRed ? 'text-glow-red' : 'text-glow-blue'
+            }`}
+          >
+            {playerTeam ? `TEAM ${playerTeam}` : 'ASSIGNING...'}
+          </div>
         </div>
 
         <div className="my-4">
-          <div className="font-retro text-xl text-gray-300 mb-2">
-            YOU ARE ON:
-          </div>
-          <div
-            className={`font-pixel text-2xl sm:text-3xl font-extrabold uppercase ${
-              isRed ? 'text-red-400 text-glow-red' : 'text-blue-400 text-glow-blue'
-            }`}
-          >
-            {playerTeam ? `TEAM ${playerTeam}` : 'ASSIGNED'}
-          </div>
-        </div>
-
-        <div className="my-6">
-          <span className="font-pixel text-6xl sm:text-8xl text-yellow-400 text-glow-gold">
+          <span className="font-arcade text-6xl sm:text-8xl text-white pixel-text-shadow">
             {secondsLeft > 0 ? secondsLeft : 'PULL!'}
           </span>
         </div>
 
-        <p className="font-retro text-lg text-amber-300">
-          PREPARE YOUR FINGERS!
+        <p className="font-ui text-base text-yellow-300 font-extrabold">
+          เตรียมรัวนิ้วดึงเชือกให้เต็มที่!
         </p>
       </div>
     </div>

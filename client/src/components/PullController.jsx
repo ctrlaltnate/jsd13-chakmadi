@@ -1,57 +1,34 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { socketService } from '../services/socket';
 import { soundService } from '../services/sound';
 
 export default function PullController({
   playerStatus = 'active', // 'active' | 'eliminated' | 'spectator'
   playerTeam = 'red', // 'red' | 'blue' | null
-  roundActive = false,
-  onTriggerShake = () => {}
+  roundActive = false
 }) {
   const [isPressed, setIsPressed] = useState(false);
+  const [btnShake, setBtnShake] = useState(false);
   const [popups, setPopups] = useState([]);
-  const [antiBotWarning, setAntiBotWarning] = useState(false);
   const [combo, setCombo] = useState(0);
 
-  const lastClientClickRef = useRef(0);
-  const warningTimeoutRef = useRef(null);
+  // Guard against holding down (No Hold-to-Pull!)
+  const isPointerDownRef = useRef(false);
+  const isSpaceDownRef = useRef(false);
 
-  // Handle player pull action
-  const handlePullClick = (e) => {
-    // Prevent zoom/double-tap delays on mobile
-    if (e) {
-      e.preventDefault();
-    }
-
+  // Central pull trigger function
+  const executePull = useCallback(() => {
     if (!roundActive || playerStatus !== 'active') {
       return;
     }
 
-    const now = performance.now();
-    const delta = now - lastClientClickRef.current;
-
-    // Client-side anti-autoclicker / anti-bot debounce check:
-    // Clicks faster than 100ms are flagged/ignored!
-    if (lastClientClickRef.current > 0 && delta < 100) {
-      setAntiBotWarning(true);
-      soundService.playWarning();
-      setCombo(0);
-
-      if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
-      warningTimeoutRef.current = setTimeout(() => {
-        setAntiBotWarning(false);
-      }, 1000);
-
-      return; // Ignore spam click
-    }
-
-    lastClientClickRef.current = now;
-
-    // Visual button press
+    // Button visual press and local button shake (screen does NOT shake)
     setIsPressed(true);
-    setTimeout(() => setIsPressed(false), 90);
+    setBtnShake(true);
+    setTimeout(() => setIsPressed(false), 80);
+    setTimeout(() => setBtnShake(false), 160);
 
-    // Mobile Haptic feedback
+    // Mobile Haptics
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       try {
         navigator.vibrate(25);
@@ -60,35 +37,89 @@ export default function PullController({
 
     // Audio sfx
     soundService.playPull();
-    onTriggerShake();
 
     // Increment combo
-    const newCombo = Math.min(10, combo + 1);
-    setCombo(newCombo);
+    setCombo((prev) => Math.min(50, prev + 1));
 
     // Floating popup particle
     const popupId = Date.now() + Math.random();
-    const randomX = (Math.random() - 0.5) * 80;
+    const randomX = (Math.random() - 0.5) * 110;
     const newPopup = {
       id: popupId,
       x: randomX,
-      text: newCombo >= 5 ? `🔥 +1 (x${newCombo})` : '+1 PULL!'
+      text: '+1 PULL!'
     };
-    setPopups((prev) => [...prev.slice(-6), newPopup]);
+    setPopups((prev) => [...prev.slice(-8), newPopup]);
     setTimeout(() => {
       setPopups((prev) => prev.filter((p) => p.id !== popupId));
-    }, 750);
+    }, 600);
 
-    // Emit to authoritative server
-    socketService.pull((res) => {
-      if (!res.success) {
-        if (res.reason === 'anti_bot_throttled') {
-          setAntiBotWarning(true);
-          soundService.playWarning();
-        }
-      }
-    });
+    // Emit pull to server
+    socketService.pull();
+  }, [roundActive, playerStatus, onTriggerShake]);
+
+  // Pointer Down (Click / Tap) - Requires releasing before pulling again
+  const handlePointerDown = (e) => {
+    if (e) {
+      e.preventDefault();
+    }
+    if (isPointerDownRef.current) {
+      return; // Prevent hold-to-pull
+    }
+    isPointerDownRef.current = true;
+    executePull();
   };
+
+  const handlePointerUp = () => {
+    isPointerDownRef.current = false;
+  };
+
+  // Keyboard Spacebar Listener (Strictly rejects holding / e.repeat)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't intercept if user is typing in an input
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+        return;
+      }
+
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+
+        // STRICT NO-HOLD: Reject auto-repeated keydown events
+        if (e.repeat || isSpaceDownRef.current) {
+          return;
+        }
+
+        isSpaceDownRef.current = true;
+        executePull();
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      if (e.code === 'Space' || e.key === ' ') {
+        isSpaceDownRef.current = false;
+      }
+    };
+
+    // Global pointer up listener to reset pointer state even if released outside button
+    const handleWindowPointerUp = () => {
+      isPointerDownRef.current = false;
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('touchend', handleWindowPointerUp);
+    window.addEventListener('mouseup', handleWindowPointerUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('touchend', handleWindowPointerUp);
+      window.removeEventListener('mouseup', handleWindowPointerUp);
+    };
+  }, [executePull]);
 
   // Handle cheer for spectators / eliminated players
   const handleCheer = (team, emote) => {
@@ -99,28 +130,28 @@ export default function PullController({
   // If Spectator or Eliminated -> Provide Cheering Controls
   if (playerStatus !== 'active') {
     return (
-      <div className="w-full max-w-md mx-auto p-4 bg-[#141824] border-4 border-amber-600/70 pixel-card text-center my-3">
-        <div className="inline-block px-3 py-1 mb-2 bg-red-600 text-white font-pixel text-[10px] uppercase pixel-border">
-          {playerStatus === 'eliminated' ? '💀 YOU WERE ELIMINATED' : '👀 SPECTATOR MODE'}
+      <div className="w-full max-w-md mx-auto p-4 bg-[#121626] border-3 border-amber-500 pixel-card text-center my-2">
+        <div className="inline-block px-3 py-1 mb-2 bg-red-600 text-white font-arcade text-xs uppercase pixel-border">
+          {playerStatus === 'eliminated' ? '💀 คุณถูกคัดออกแล้ว (ELIMINATED)' : '👀 โหมดผู้ชม (SPECTATOR)'}
         </div>
-        <p className="font-retro text-lg text-amber-300 mb-3">
-          CHEER YOUR FAVORITE TEAM TO SPUR THEM ON!
+        <p className="font-ui text-base text-white font-bold mb-3">
+          ร่วมส่งแรงใจเชียร์ทีมที่คุณต้องการให้ชนะ!
         </p>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => handleCheer('red', '🔥')}
-            className="py-4 pixel-btn pixel-btn-red text-white text-xs font-pixel flex items-center justify-center gap-2 cursor-pointer"
+            className="py-3.5 pixel-btn pixel-btn-red text-white text-sm font-ui font-extrabold flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <span>🔥</span> CHEER RED
+            <span>🔥</span> เชียร์ทีมแดง (RED)
           </button>
           <button
             type="button"
             onClick={() => handleCheer('blue', '⚡')}
-            className="py-4 pixel-btn pixel-btn-blue text-white text-xs font-pixel flex items-center justify-center gap-2 cursor-pointer"
+            className="py-3.5 pixel-btn pixel-btn-blue text-white text-sm font-ui font-extrabold flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <span>⚡</span> CHEER BLUE
+            <span>⚡</span> เชียร์ทีมน้ำเงิน (BLUE)
           </button>
         </div>
       </div>
@@ -128,26 +159,19 @@ export default function PullController({
   }
 
   // Active Player PULL Controller
-  const teamColorClass = playerTeam === 'red' ? 'text-red-400' : 'text-blue-400';
+  const teamColorText = playerTeam === 'red' ? 'text-red-400' : 'text-blue-400';
 
   return (
-    <div className="w-full max-w-lg mx-auto flex flex-col items-center justify-center py-2 px-4 select-none">
-      {/* Anti-bot warning banner */}
-      {antiBotWarning && (
-        <div className="mb-2 px-3 py-1.5 bg-red-600 text-white font-pixel text-[10px] sm:text-xs uppercase pixel-border animate-bounce text-center">
-          ⚠️ ANTI-BOT: TOO FAST! MIN 100ms INTERVAL!
-        </div>
-      )}
-
-      {/* Combo Indicator */}
-      <div className="h-6 mb-1 text-center font-pixel text-xs">
+    <div className="w-full max-w-md mx-auto flex flex-col items-center justify-center py-2 px-2 select-none">
+      {/* Combo / Rhythm Indicator */}
+      <div className="h-6 mb-1 text-center font-ui text-sm sm:text-base font-extrabold">
         {combo >= 3 ? (
-          <span className="text-yellow-400 animate-pulse text-glow-gold">
-            COMBO x{combo}! TURBO RHYTHM!
+          <span className="text-yellow-300 animate-pulse pixel-text-shadow">
+            ⚡ COMBO x{combo}! รัวนิ้วเร็วเต็มพิกัด!
           </span>
         ) : (
-          <span className="font-retro text-base text-gray-400">
-            TAP IN RHYTHM (MIN 100ms)
+          <span className="text-white">
+            กดปุ่ม <strong className="text-yellow-400 font-arcade">[SPACE]</strong> หรือ <strong className="text-yellow-400 font-arcade">คลิก</strong> (ห้ามกดค้าง)
           </span>
         )}
       </div>
@@ -159,7 +183,7 @@ export default function PullController({
           {popups.map((p) => (
             <div
               key={p.id}
-              className="absolute font-pixel text-xs sm:text-sm text-yellow-300 font-extrabold whitespace-nowrap animate-float-pop text-glow-gold pointer-events-none"
+              className="absolute font-ui text-base sm:text-lg text-yellow-300 font-extrabold whitespace-nowrap animate-float-pop pixel-text-shadow pointer-events-none"
               style={{ left: `${p.x}px` }}
             >
               {p.text}
@@ -170,29 +194,33 @@ export default function PullController({
         {/* GIANT 8-BIT RETRO PULL BUTTON */}
         <button
           type="button"
-          onMouseDown={handlePullClick}
-          onTouchStart={handlePullClick}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerUp}
+          onPointerCancel={handlePointerUp}
           disabled={!roundActive}
-          className={`w-full max-w-xs h-28 sm:h-32 pixel-pull-btn text-xl sm:text-2xl font-pixel flex flex-col items-center justify-center gap-1 ${
+          className={`w-full max-w-sm h-28 sm:h-32 pixel-pull-btn text-2xl sm:text-3xl font-arcade flex flex-col items-center justify-center gap-1 ${
             isPressed ? 'pressed' : ''
-          } ${!roundActive ? 'opacity-50 cursor-not-allowed grayscale' : 'cursor-pointer'}`}
+          } ${btnShake ? 'btn-shake' : ''} ${!roundActive ? 'opacity-50 cursor-not-allowed grayscale' : 'cursor-pointer'}`}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-white pixel-text-shadow">
             <span>💥</span>
-            <span>PULL!</span>
+            <span>PULL! (ดึง!)</span>
             <span>💥</span>
           </div>
-          <span className="text-[10px] tracking-normal font-retro text-amber-200 uppercase">
-            {roundActive ? `MASH FOR ${playerTeam?.toUpperCase()}!` : 'WAIT FOR START'}
+          <span className="text-xs sm:text-sm font-ui text-yellow-200 font-extrabold uppercase tracking-wide">
+            {roundActive ? `กด SPACE หรือ แตะรัวๆ (ทีม ${playerTeam?.toUpperCase()})` : 'รอสัญญาณเริ่ม'}
           </span>
         </button>
       </div>
 
-      {/* Status footer */}
-      <div className="mt-3 flex items-center gap-3 font-retro text-sm text-gray-400">
-        <span>ASSIGNED: <strong className={teamColorClass}>{playerTeam ? `TEAM ${playerTeam.toUpperCase()}` : 'ASSIGNING...'}</strong></span>
+      {/* Controls Hint & Anti-Hold Rule */}
+      <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2 font-ui text-xs sm:text-sm font-bold text-white text-center">
+        <span>ทีม: <strong className={`${teamColorText} font-extrabold`}>{playerTeam ? `TEAM ${playerTeam.toUpperCase()}` : 'กำลังสุ่มทีม...'}</strong></span>
         <span>•</span>
-        <span>ANTI-BOT: <strong className="text-emerald-400">ACTIVE (100ms)</strong></span>
+        <span className="text-yellow-300">⌨️ กดปุ่ม Spacebar ได้</span>
+        <span>•</span>
+        <span className="text-red-300 font-extrabold">🚫 ไม่สามารถกดค้างได้</span>
       </div>
     </div>
   );

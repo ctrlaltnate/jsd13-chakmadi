@@ -48,6 +48,10 @@ export const socketService = {
     socket.emit('join_game', { name, avatar });
   },
 
+  updateName(name) {
+    socket.emit('update_name', name);
+  },
+
   pull(callback) {
     socket.emit('pull', Date.now(), callback);
   },
@@ -78,5 +82,9 @@ export const socketService = {
 
   claimHost() {
     socket.emit('claim_host');
+  },
+
+  leaveGame() {
+    socket.emit('leave_game');
   }
 };

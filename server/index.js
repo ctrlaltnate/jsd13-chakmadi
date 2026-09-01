@@ -3,17 +3,26 @@ import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import os from 'os';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const server = http.createServer(app);
+
+// Low-latency tuned Socket.io server
 const io = new Server(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST']
-  }
+  },
+  transports: ['websocket', 'polling'],
+  perMessageDeflate: false, // Disabling deflate prevents compression latency on high-frequency packets
+  pingInterval: 10000,
+  pingTimeout: 5000
 });
 
 const PORT = process.env.PORT || 3001;
@@ -38,7 +47,7 @@ const gameState = {
   status: 'LOBBY', // 'LOBBY' | 'ROUND_STARTING' | 'ROUND_ACTIVE' | 'ROUND_ELIMINATION' | 'CHAMPIONSHIP'
   roundNumber: 1,
   totalRounds: 0,
-  roundDuration: 25, // seconds
+  roundDuration: 60, // seconds
   roundStartTime: 0,
   roundEndTime: 0,
   countdownStartTime: 0,
@@ -86,8 +95,28 @@ class Player {
   }
 }
 
+// Calculate team member counts
+function getTeamCounts() {
+  const redCount = Object.values(gameState.players).filter(p => p.status === 'active' && p.team === 'red').length;
+  const blueCount = Object.values(gameState.players).filter(p => p.status === 'active' && p.team === 'blue').length;
+  return {
+    red: Math.max(1, redCount),
+    blue: Math.max(1, blueCount),
+    actualRed: redCount,
+    actualBlue: blueCount
+  };
+}
+
+// Calculate team score as weighted average: Total Pulls / Team Player Count
+function updateWeightedScores() {
+  const counts = getTeamCounts();
+  gameState.teamRedScore = Number((gameState.teamRedPulls / counts.red).toFixed(1));
+  gameState.teamBlueScore = Number((gameState.teamBluePulls / counts.blue).toFixed(1));
+}
+
 // Broadcast clean state to all clients
 function getPublicState() {
+  const counts = getTeamCounts();
   return {
     status: gameState.status,
     roundNumber: gameState.roundNumber,
@@ -100,6 +129,8 @@ function getPublicState() {
     teamBlueScore: gameState.teamBlueScore,
     teamRedPulls: gameState.teamRedPulls,
     teamBluePulls: gameState.teamBluePulls,
+    teamRedCount: counts.actualRed,
+    teamBlueCount: counts.actualBlue,
     players: Object.values(gameState.players).map(p => ({
       id: p.id,
       name: p.name,
@@ -206,9 +237,9 @@ function endRound(reason = 'time_up') {
   } else if (gameState.ropePos > 0.1) {
     winner = 'blue';
   } else {
-    if (gameState.teamRedPulls > gameState.teamBluePulls) {
+    if (gameState.teamRedScore > gameState.teamBlueScore) {
       winner = 'red';
-    } else if (gameState.teamBluePulls > gameState.teamRedPulls) {
+    } else if (gameState.teamBlueScore > gameState.teamRedScore) {
       winner = 'blue';
     } else {
       // Rare absolute tie -> coin flip
@@ -276,15 +307,13 @@ setInterval(() => {
       }
     });
 
-    // 2. Physics computation for rope
-    // Net force toward Red (negative) or Blue (positive)
-    // Rope target delta
-    const pullDiff = gameState.teamBluePulls - gameState.teamRedPulls;
-    // Base displacement mapped to -100 to +100
-    // Dynamic spring physics with inertia
-    const activeCount = Object.values(gameState.players).filter(p => p.status === 'active').length || 2;
-    const forcePerPull = 100 / Math.max(8, activeCount * 12);
-    const targetPos = Math.max(-100, Math.min(100, pullDiff * forcePerPull));
+    // 2. Physics computation for rope based on Weighted Average Score
+    const counts = getTeamCounts();
+    const redAvg = gameState.teamRedPulls / counts.red;
+    const blueAvg = gameState.teamBluePulls / counts.blue;
+    // Net average pull difference: positive = Blue advantage, negative = Red advantage
+    const avgDiff = blueAvg - redAvg;
+    const targetPos = Math.max(-100, Math.min(100, avgDiff * 6.5));
 
     // Smooth toward targetPos with spring interpolation
     gameState.ropePos += (targetPos - gameState.ropePos) * 0.15;
@@ -306,62 +335,39 @@ setInterval(() => {
       return;
     }
 
-    // High-frequency sync during active match
-    io.emit('physics_tick', {
+    // High-frequency volatile sync during active match (lowest latency, no buffer piling)
+    io.volatile.emit('physics_tick', {
       ropePos: gameState.ropePos,
       teamRedScore: gameState.teamRedScore,
       teamBlueScore: gameState.teamBlueScore,
       teamRedPulls: gameState.teamRedPulls,
       teamBluePulls: gameState.teamBluePulls,
+      teamRedCount: counts.actualRed,
+      teamBlueCount: counts.actualBlue,
       serverTime: now
     });
   }
 }, 50); // 20 FPS physics loop
 
-// Handle player pull action with anti-bot rate-limiting (< 100ms)
+// Handle player pull action (Unlimited fast clicks allowed!)
 function handlePull(socketId, timestamp = Date.now()) {
   const player = gameState.players[socketId];
   if (!player || player.status !== 'active' || gameState.status !== 'ROUND_ACTIVE') {
     return { success: false, reason: 'inactive' };
   }
 
-  // Anti-bot check: clicks faster than 100ms interval are flagged/ignored
-  const delta = timestamp - player.lastPullTime;
-  if (player.lastPullTime > 0 && delta < 100) {
-    player.flaggedClicks += 1;
-    player.combo = 0;
-    // brief penalty if repeatedly spamming
-    if (player.flaggedClicks > 3) {
-      player.penaltyUntil = timestamp + 500;
-    }
-    return {
-      success: false,
-      reason: 'anti_bot_throttled',
-      delta,
-      flagged: true
-    };
-  }
-
-  if (timestamp < player.penaltyUntil) {
-    return {
-      success: false,
-      reason: 'penalty_cooldown'
-    };
-  }
-
   // Valid pull!
   player.lastPullTime = timestamp;
   player.roundPulls += 1;
   player.totalPulls += 1;
-  player.combo = Math.min(10, (player.combo || 0) + 1);
+  player.combo = Math.min(50, (player.combo || 0) + 1);
 
   if (player.team === 'red') {
     gameState.teamRedPulls += 1;
-    gameState.teamRedScore += 10;
   } else if (player.team === 'blue') {
     gameState.teamBluePulls += 1;
-    gameState.teamBlueScore += 10;
   }
+  updateWeightedScores();
 
   return {
     success: true,
@@ -375,8 +381,9 @@ function handlePull(socketId, timestamp = Date.now()) {
 io.on('connection', (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
-  // Assign first connector as host if none exists
-  if (!gameState.hostSocketId) {
+  // Assign first connector as host if none exists or if current host disconnected
+  const activeHost = gameState.hostSocketId ? io.sockets.sockets.get(gameState.hostSocketId) : null;
+  if (!gameState.hostSocketId || !activeHost) {
     gameState.hostSocketId = socket.id;
   }
 
@@ -392,6 +399,12 @@ io.on('connection', (socket) => {
   socket.on('join_game', ({ name, avatar }) => {
     const sanitizedName = (name || `Player_${socket.id.slice(0, 4)}`).trim().slice(0, 16);
     
+    // Validate host is alive
+    const currentHost = gameState.hostSocketId ? io.sockets.sockets.get(gameState.hostSocketId) : null;
+    if (!currentHost) {
+      gameState.hostSocketId = socket.id;
+    }
+
     // Check if player already exists (reconnect)
     if (gameState.players[socket.id]) {
       gameState.players[socket.id].name = sanitizedName;
@@ -413,9 +426,33 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
+  // Player updates name
+  socket.on('update_name', (newName) => {
+    if (gameState.players[socket.id]) {
+      const sanitizedName = (newName || '').trim().slice(0, 14);
+      if (sanitizedName) {
+        gameState.players[socket.id].name = sanitizedName;
+        broadcastState();
+      }
+    }
+  });
+
   // Claim or release host role
   socket.on('claim_host', () => {
     gameState.hostSocketId = socket.id;
+    broadcastState();
+  });
+
+  // Player leaves game
+  socket.on('leave_game', () => {
+    console.log(`Player left game: ${socket.id}`);
+    delete gameState.players[socket.id];
+
+    if (gameState.hostSocketId === socket.id) {
+      const realPlayers = Object.values(gameState.players).filter(p => !p.isBot);
+      gameState.hostSocketId = realPlayers.length > 0 ? realPlayers[0].id : null;
+    }
+
     broadcastState();
   });
 
@@ -456,7 +493,7 @@ io.on('connection', (socket) => {
 
   // Host adjusts round duration
   socket.on('set_round_duration', (duration) => {
-    if (socket.id === gameState.hostSocketId && duration >= 10 && duration <= 120) {
+    if (socket.id === gameState.hostSocketId && duration >= 10 && duration <= 300) {
       gameState.roundDuration = duration;
       broadcastState();
     }
@@ -542,6 +579,19 @@ app.get('/api/info', (req, res) => {
     port: PORT
   });
 });
+
+// Serve static files from compiled React client if dist exists (Production on Render)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const clientDistPath = path.join(__dirname, '../client/dist');
+
+if (fs.existsSync(clientDistPath)) {
+  console.log(`Serving static client files from: ${clientDistPath}`);
+  app.use(express.static(clientDistPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
+}
 
 server.listen(PORT, () => {
   console.log(`=============================================`);
