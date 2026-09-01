@@ -75,7 +75,7 @@ class GameRoom {
   constructor() {
     this.status = 'LOBBY'; // 'LOBBY' | 'ROUND_STARTING' | 'ROUND_ACTIVE' | 'ROUND_ELIMINATION' | 'CHAMPIONSHIP'
     this.roundNumber = 1;
-    this.roundDuration = 60; // seconds
+    this.roundDuration = 45; // seconds (default 45s)
     this.roundStartTime = 0;
     this.roundEndTime = 0;
     this.countdownStartTime = 0;
@@ -569,7 +569,7 @@ io.on('connection', (socket) => {
   // Set round duration
   socket.on('set_round_duration', (durationSec) => {
     if (mainRoom.status === 'LOBBY' && mainRoom.hostSocketId === socket.id) {
-      mainRoom.roundDuration = Math.max(10, Math.min(300, parseInt(durationSec, 10) || 60));
+      mainRoom.roundDuration = Math.max(10, Math.min(300, parseInt(durationSec, 10) || 45));
       mainRoom.broadcastState();
     }
   });

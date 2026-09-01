@@ -17,7 +17,7 @@ export default function App() {
   const [gameState, setGameState] = useState({
     status: 'LOBBY',
     roundNumber: 1,
-    roundDuration: 60,
+    roundDuration: 45,
     roundStartTime: 0,
     roundEndTime: 0,
     countdownStartTime: 0,

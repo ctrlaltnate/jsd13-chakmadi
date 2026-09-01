@@ -8,7 +8,7 @@ const AVATARS_ICON = ['🥊', '⚔️', '🥷', '🧙‍♂️', '🤖', '🏴�
 export default function LobbyScreen({
   players = [],
   isHost = false,
-  roundDuration = 60,
+  roundDuration = 45,
   currentSocketId = null,
   localIp = 'localhost',
   myPlayer = null,
@@ -229,7 +229,7 @@ export default function LobbyScreen({
                 ⏱️ เวลาแข่งขันต่อรอบ (ROUND TIMER):
               </label>
               <div className="flex flex-wrap items-center gap-2">
-                {[60, 120, 180].map((sec) => (
+                {[45, 60, 120, 180].map((sec) => (
                   <button
                     key={sec}
                     type="button"
