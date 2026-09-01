@@ -551,9 +551,20 @@ io.on('connection', (socket) => {
     mainRoom.broadcastState();
   });
 
-  // Start Tournament
+  // Start Tournament (Can only start when everyone is ready!)
   socket.on('start_tournament', () => {
     if (mainRoom.status === 'LOBBY' && mainRoom.hostSocketId === socket.id) {
+      const allPlayers = Object.values(mainRoom.players);
+      if (allPlayers.length < 2) {
+        return;
+      }
+
+      // Enforce: Everyone must be ready (bots are ready, host is ready, non-hosts must have isReady === true)
+      const notReadyPlayers = allPlayers.filter(p => !p.isReady && p.id !== mainRoom.hostSocketId);
+      if (notReadyPlayers.length > 0) {
+        return;
+      }
+
       mainRoom.roundNumber = 1;
       mainRoom.champion = null;
       Object.values(mainRoom.players).forEach(p => {

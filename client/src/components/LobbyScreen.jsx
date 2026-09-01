@@ -58,10 +58,20 @@ export default function LobbyScreen({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Ready calculations (Host and bots are ready; all non-host humans must be isReady === true)
+  const unreadyPlayers = players.filter((p) => !p.isReady && p.id !== currentSocketId && !p.isBot);
+  const isEveryoneReady = players.length >= 2 && unreadyPlayers.length === 0;
+
   const handleStartTournament = () => {
     if (players.length < 2) {
       soundService.playWarning();
       alert('ต้องมีผู้เล่นอย่างน้อย 2 คน! หัวห้องสามารถกดปุ่มเพิ่มบอทจำลองเพื่อทดสอบได้ทันที');
+      return;
+    }
+    if (unreadyPlayers.length > 0) {
+      soundService.playWarning();
+      const names = unreadyPlayers.map((p) => p.name).join(', ');
+      alert(`ไม่สามารถเริ่มเกมได้! ยังมีผู้เล่นที่ยังไม่กดพร้อม: ${names}`);
       return;
     }
     soundService.playVictory();
@@ -79,7 +89,7 @@ export default function LobbyScreen({
   };
 
   // Ready counter
-  const readyCount = players.filter((p) => p.isReady || p.id === currentSocketId && isHost).length;
+  const readyCount = players.filter((p) => p.isReady || (p.id === currentSocketId && isHost)).length;
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-3 sm:space-y-4 select-none">
@@ -283,14 +293,37 @@ export default function LobbyScreen({
               </div>
             </div>
 
-            {/* Start Tournament Button */}
-            <button
-              type="button"
-              onClick={handleStartTournament}
-              className="w-full py-3.5 sm:py-4 pixel-btn pixel-btn-gold text-black text-sm sm:text-base font-arcade font-extrabold tracking-wider cursor-pointer shadow-lg hover:scale-101 transition-transform"
-            >
-              🚀 เริ่มการแข่งขันชักเย่อ (START TOURNAMENT)
-            </button>
+            {/* Start Tournament Button (Active only when everyone has clicked ready) */}
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={handleStartTournament}
+                disabled={!isEveryoneReady}
+                className={`w-full py-3.5 sm:py-4 pixel-btn text-sm sm:text-base font-arcade font-extrabold tracking-wider transition-all ${
+                  isEveryoneReady
+                    ? 'pixel-btn-gold text-black cursor-pointer shadow-[0_0_20px_rgba(250,204,21,0.6)] animate-pulse hover:scale-101'
+                    : 'bg-gray-800 text-gray-400 border-2 border-gray-600 cursor-not-allowed opacity-75'
+                }`}
+              >
+                {players.length < 2 ? (
+                  '🔒 รอผู้เล่นอย่างน้อย 2 คน'
+                ) : !isEveryoneReady ? (
+                  `⏳ รอลูกห้องกดพร้อม (${unreadyPlayers.length} คนยังไม่พร้อม)`
+                ) : (
+                  '🚀 เริ่มการแข่งขันชักเย่อ (ทุกคนพร้อมแล้ว!)'
+                )}
+              </button>
+
+              {/* Waiting status warning banner */}
+              {players.length >= 2 && !isEveryoneReady && (
+                <div className="text-center font-ui text-xs text-amber-300 font-bold bg-amber-950/50 p-2 border border-amber-500/50 flex items-center justify-center gap-1.5 shadow-sm">
+                  <span>⚠️</span>
+                  <span>
+                    กำลังรอผู้เล่นกดพร้อม: <strong className="text-white underline">{unreadyPlayers.map((p) => p.name).join(', ')}</strong>
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           /* NON-HOST (ลูกห้อง) INTERACTIVE READY SECTION */
