@@ -125,7 +125,7 @@ export default function App() {
       }
     } catch (e) {}
     soundService.playCheer();
-    alert(`📋 คัดลอกลิงก์ห้อง #${roomId} แล้ว! ส่งต่อให้เพื่อนเข้าเล่นได้ทันที`);
+    alert(`📋 คัดลอกลิงก์ห้อง ${roomId} แล้ว! ส่งต่อให้เพื่อนเข้าเล่นได้ทันที`);
   };
 
   // Socket event listeners
@@ -326,7 +326,7 @@ export default function App() {
                 title="คลิกเพื่อคัดลอกลิงก์ห้องแข่งขัน"
               >
                 <span>🔑</span>
-                <span>#{roomId}</span>
+                <span>{roomId}</span>
               </button>
             )}
 

@@ -49,7 +49,7 @@ export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
           </div>
           {roomId && (
             <div className="px-2.5 py-1 bg-[#171d30] border-2 border-yellow-400 text-yellow-300 font-arcade text-xs tracking-wider">
-              #{roomId}
+              {roomId}
             </div>
           )}
         </div>
@@ -58,7 +58,7 @@ export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
           PLAYER SELECT
         </h2>
         <p className="font-ui text-base text-yellow-300 font-bold mb-5 tracking-wide">
-          เลือกตัวละครและพิมพ์ชื่อของคุณเพื่อเข้าสู่ห้อง #{roomId}!
+          เลือกตัวละครและพิมพ์ชื่อของคุณเพื่อเข้าสู่ห้อง {roomId}!
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-left">
@@ -127,7 +127,7 @@ export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
             type="submit"
             className="w-full py-3.5 sm:py-4 text-base font-arcade pixel-btn pixel-btn-gold text-black font-extrabold tracking-wider cursor-pointer shadow-lg mt-2"
           >
-            READY TO PULL! (เข้าห้อง #{roomId})
+            READY TO PULL! (เข้าห้อง {roomId})
           </button>
         </form>
       </div>

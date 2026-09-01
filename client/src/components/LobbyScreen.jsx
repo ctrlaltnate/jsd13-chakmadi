@@ -137,7 +137,7 @@ export default function LobbyScreen({
                       รหัสห้องแข่งขัน (ROOM CODE):
                     </span>
                     <span className="font-arcade text-lg sm:text-2xl text-white tracking-wider pixel-text-shadow">
-                      #{roomId}
+                      {roomId}
                     </span>
                   </div>
                 </div>
@@ -258,7 +258,7 @@ export default function LobbyScreen({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-xs">
           <div className="pixel-card p-5 bg-[#121626] text-center max-w-xs sm:max-w-sm w-full border-4 border-yellow-400">
             <h3 className="font-arcade text-sm text-white mb-2">
-              SCAN TO JOIN ROOM #{roomId}
+              SCAN TO JOIN ROOM: {roomId}
             </h3>
             <p className="font-ui text-xs text-yellow-300 font-bold mb-3">
               ใช้กล้องมือถือสแกนเพื่อเข้าห้องแข่งขันนี้ทันที!
@@ -384,7 +384,7 @@ export default function LobbyScreen({
         <div className="flex items-center justify-between border-b-2 border-gray-700 pb-2 mb-2.5">
           <div className="flex items-center gap-2">
             <span className="font-ui text-sm sm:text-base font-extrabold text-white">
-              รายชื่อผู้เล่นในห้อง #{roomId}
+              รายชื่อผู้เล่นในห้อง {roomId}
             </span>
             <span className="px-2 py-0.5 bg-yellow-400 text-black text-xs font-ui font-extrabold rounded-none">
               {players.length} คน
