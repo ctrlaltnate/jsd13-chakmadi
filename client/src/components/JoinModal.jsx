@@ -11,7 +11,7 @@ const AVATARS = [
   { id: 5, name: 'Pirate', icon: '🏴‍☠️' }
 ];
 
-export default function JoinModal({ isOpen, onJoined }) {
+export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
   const [name, setName] = useState(() => localStorage.getItem('tug_player_name') || '');
   const [selectedAvatar, setSelectedAvatar] = useState(() => parseInt(localStorage.getItem('tug_player_avatar') || '0', 10));
   const [error, setError] = useState('');
@@ -33,25 +33,32 @@ export default function JoinModal({ isOpen, onJoined }) {
     }
 
     soundService.playVictory();
-    socketService.joinGame(cleanName, selectedAvatar);
+    socketService.joinGame(cleanName, selectedAvatar, roomId);
     localStorage.setItem('tug_player_name', cleanName);
     localStorage.setItem('tug_player_avatar', selectedAvatar);
-    onJoined({ name: cleanName, avatar: selectedAvatar });
+    onJoined({ name: cleanName, avatar: selectedAvatar, roomId });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-xs">
       <div className="pixel-card w-full max-w-sm sm:max-w-md p-5 sm:p-6 bg-[#121626] text-center border-4 border-[#475569]">
-        {/* Retro Header Tag */}
-        <div className="inline-block px-3 py-1 mb-3 bg-amber-400 text-black text-xs font-bold uppercase tracking-wider pixel-border">
-          INSERT COIN • พร้อมลงแข่ง
+        {/* Retro Header Tag with Room Code */}
+        <div className="flex items-center justify-center gap-2 mb-3">
+          <div className="px-2.5 py-1 bg-amber-400 text-black text-xs font-bold uppercase tracking-wider pixel-border">
+            INSERT COIN • พร้อมลงแข่ง
+          </div>
+          {roomId && (
+            <div className="px-2.5 py-1 bg-[#171d30] border-2 border-yellow-400 text-yellow-300 font-arcade text-xs tracking-wider">
+              #{roomId}
+            </div>
+          )}
         </div>
         
         <h2 className="text-2xl sm:text-3xl font-arcade text-white pixel-text-shadow mb-1">
           PLAYER SELECT
         </h2>
         <p className="font-ui text-base text-yellow-300 font-bold mb-5 tracking-wide">
-          เลือกตัวละครและพิมพ์ชื่อของคุณเพื่อเข้าสู่สังเวียน!
+          เลือกตัวละครและพิมพ์ชื่อของคุณเพื่อเข้าสู่ห้อง #{roomId}!
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-left">
@@ -117,7 +124,7 @@ export default function JoinModal({ isOpen, onJoined }) {
             type="submit"
             className="w-full py-3.5 sm:py-4 text-base font-arcade pixel-btn pixel-btn-gold text-black font-extrabold tracking-wider cursor-pointer shadow-lg mt-2"
           >
-            READY TO PULL! (เข้าเล่น)
+            READY TO PULL! (เข้าห้อง #{roomId})
           </button>
         </form>
       </div>

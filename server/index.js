@@ -27,7 +27,7 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3001;
 
-// Helper to get local IP address for sharing QR code
+// Helper to get local IP address for sharing QR code in local network
 function getLocalIp() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
@@ -42,30 +42,6 @@ function getLocalIp() {
 
 const localIp = getLocalIp();
 
-// TOURNAMENT & GAME STATE
-const gameState = {
-  status: 'LOBBY', // 'LOBBY' | 'ROUND_STARTING' | 'ROUND_ACTIVE' | 'ROUND_ELIMINATION' | 'CHAMPIONSHIP'
-  roundNumber: 1,
-  totalRounds: 0,
-  roundDuration: 60, // seconds
-  roundStartTime: 0,
-  roundEndTime: 0,
-  countdownStartTime: 0,
-  ropePos: 0, // -100 (Red win) to +100 (Blue win)
-  ropeVelocity: 0,
-  teamRedScore: 0,
-  teamBlueScore: 0,
-  teamRedPulls: 0,
-  teamBluePulls: 0,
-  players: {}, // socketId -> Player
-  hostSocketId: null,
-  eliminatedThisRound: [],
-  survivorsThisRound: [],
-  winnerTeam: null,
-  champion: null,
-  history: []
-};
-
 // Bot names pool
 const BOT_NAMES = [
   'PixelPete', 'ChiptuneChad', 'ByteBrawler', 'MegaMario', 'RetroRyu',
@@ -79,315 +55,345 @@ const BOT_NAMES = [
 class Player {
   constructor(id, name, isBot = false, avatar = 0) {
     this.id = id;
-    this.name = name || (isBot ? 'Bot' : 'Player');
-    this.isBot = isBot;
-    this.avatar = avatar;
+    this.name = name;
     this.team = null; // 'red' | 'blue' | null
     this.status = 'active'; // 'active' | 'eliminated' | 'spectator'
-    this.totalPulls = 0;
+    this.avatar = avatar;
     this.roundPulls = 0;
+    this.totalPulls = 0;
+    this.isBot = isBot;
     this.lastPullTime = 0;
-    this.flaggedClicks = 0;
-    this.penaltyUntil = 0;
     this.combo = 0;
-    this.botPullInterval = 140 + Math.floor(Math.random() * 80); // 140ms - 220ms
+    this.botPullInterval = 140 + Math.floor(Math.random() * 80);
     this.nextBotPullTime = 0;
   }
 }
 
-// Calculate team member counts
-function getTeamCounts() {
-  const redCount = Object.values(gameState.players).filter(p => p.status === 'active' && p.team === 'red').length;
-  const blueCount = Object.values(gameState.players).filter(p => p.status === 'active' && p.team === 'blue').length;
-  return {
-    red: Math.max(1, redCount),
-    blue: Math.max(1, blueCount),
-    actualRed: redCount,
-    actualBlue: blueCount
-  };
-}
-
-// Calculate team score as weighted average: Total Pulls / Team Player Count
-function updateWeightedScores() {
-  const counts = getTeamCounts();
-  gameState.teamRedScore = Number((gameState.teamRedPulls / counts.red).toFixed(1));
-  gameState.teamBlueScore = Number((gameState.teamBluePulls / counts.blue).toFixed(1));
-}
-
-// Broadcast clean state to all clients
-function getPublicState() {
-  const counts = getTeamCounts();
-  return {
-    status: gameState.status,
-    roundNumber: gameState.roundNumber,
-    roundDuration: gameState.roundDuration,
-    roundStartTime: gameState.roundStartTime,
-    roundEndTime: gameState.roundEndTime,
-    countdownStartTime: gameState.countdownStartTime,
-    ropePos: gameState.ropePos,
-    teamRedScore: gameState.teamRedScore,
-    teamBlueScore: gameState.teamBlueScore,
-    teamRedPulls: gameState.teamRedPulls,
-    teamBluePulls: gameState.teamBluePulls,
-    teamRedCount: counts.actualRed,
-    teamBlueCount: counts.actualBlue,
-    players: Object.values(gameState.players).map(p => ({
-      id: p.id,
-      name: p.name,
-      team: p.team,
-      status: p.status,
-      avatar: p.avatar,
-      roundPulls: p.roundPulls,
-      totalPulls: p.totalPulls,
-      isBot: p.isBot
-    })),
-    hostSocketId: gameState.hostSocketId,
-    eliminatedThisRound: gameState.eliminatedThisRound,
-    survivorsThisRound: gameState.survivorsThisRound,
-    winnerTeam: gameState.winnerTeam,
-    champion: gameState.champion,
-    serverTime: Date.now(),
-    localIp
-  };
-}
-
-function broadcastState() {
-  io.emit('game_state', getPublicState());
-}
-
-// Split active survivors randomly into Team Red and Team Blue
-function assignTeams() {
-  const activePlayers = Object.values(gameState.players).filter(p => p.status === 'active');
-  
-  // Shuffle active players Fisher-Yates
-  for (let i = activePlayers.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [activePlayers[i], activePlayers[j]] = [activePlayers[j], activePlayers[i]];
+// MULTI-ROOM TOURNAMENT SYSTEM
+class Room {
+  constructor(id) {
+    this.id = id;
+    this.status = 'LOBBY'; // 'LOBBY' | 'ROUND_STARTING' | 'ROUND_ACTIVE' | 'ROUND_ELIMINATION' | 'CHAMPIONSHIP'
+    this.roundNumber = 1;
+    this.totalRounds = 0;
+    this.roundDuration = 60; // seconds
+    this.roundStartTime = 0;
+    this.roundEndTime = 0;
+    this.countdownStartTime = 0;
+    this.ropePos = 0; // -100 (Red win) to +100 (Blue win)
+    this.teamRedScore = 0;
+    this.teamBlueScore = 0;
+    this.teamRedPulls = 0;
+    this.teamBluePulls = 0;
+    this.players = {}; // socketId -> Player
+    this.hostSocketId = null;
+    this.eliminatedThisRound = [];
+    this.survivorsThisRound = [];
+    this.winnerTeam = null;
+    this.champion = null;
+    this.lastActivity = Date.now();
   }
 
-  // Assign half to Red, half to Blue
-  activePlayers.forEach((p, idx) => {
-    p.team = idx % 2 === 0 ? 'red' : 'blue';
-    p.roundPulls = 0;
-  });
+  getTeamCounts() {
+    const redCount = Object.values(this.players).filter(p => p.status === 'active' && p.team === 'red').length;
+    const blueCount = Object.values(this.players).filter(p => p.status === 'active' && p.team === 'blue').length;
+    return {
+      red: Math.max(1, redCount),
+      blue: Math.max(1, blueCount),
+      actualRed: redCount,
+      actualBlue: blueCount
+    };
+  }
 
-  // Keep spectators / eliminated players teamless
-  Object.values(gameState.players).forEach(p => {
-    if (p.status !== 'active') {
-      p.team = null;
-      p.roundPulls = 0;
+  updateWeightedScores() {
+    const counts = this.getTeamCounts();
+    this.teamRedScore = Number((this.teamRedPulls / counts.red).toFixed(1));
+    this.teamBlueScore = Number((this.teamBluePulls / counts.blue).toFixed(1));
+  }
+
+  getPublicState() {
+    const counts = this.getTeamCounts();
+    return {
+      roomId: this.id,
+      status: this.status,
+      roundNumber: this.roundNumber,
+      roundDuration: this.roundDuration,
+      roundStartTime: this.roundStartTime,
+      roundEndTime: this.roundEndTime,
+      countdownStartTime: this.countdownStartTime,
+      ropePos: this.ropePos,
+      teamRedScore: this.teamRedScore,
+      teamBlueScore: this.teamBlueScore,
+      teamRedPulls: this.teamRedPulls,
+      teamBluePulls: this.teamBluePulls,
+      teamRedCount: counts.actualRed,
+      teamBlueCount: counts.actualBlue,
+      players: Object.values(this.players).map(p => ({
+        id: p.id,
+        name: p.name,
+        team: p.team,
+        status: p.status,
+        avatar: p.avatar,
+        roundPulls: p.roundPulls,
+        totalPulls: p.totalPulls,
+        isBot: p.isBot
+      })),
+      hostSocketId: this.hostSocketId,
+      eliminatedThisRound: this.eliminatedThisRound,
+      survivorsThisRound: this.survivorsThisRound,
+      winnerTeam: this.winnerTeam,
+      champion: this.champion,
+      serverTime: Date.now(),
+      localIp
+    };
+  }
+
+  broadcastState() {
+    io.to(this.id).emit('game_state', this.getPublicState());
+  }
+
+  // Split active survivors randomly into Team Red and Team Blue
+  assignTeams() {
+    const activePlayers = Object.values(this.players).filter(p => p.status === 'active');
+    
+    // Shuffle active players Fisher-Yates
+    for (let i = activePlayers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [activePlayers[i], activePlayers[j]] = [activePlayers[j], activePlayers[i]];
     }
-  });
-}
 
-// Start a tournament round
-function startRound() {
-  const activePlayers = Object.values(gameState.players).filter(p => p.status === 'active');
-  if (activePlayers.length < 2) {
-    console.log('Not enough active players to start round');
-    return;
+    // Assign half to Red, half to Blue
+    activePlayers.forEach((p, idx) => {
+      p.team = idx % 2 === 0 ? 'red' : 'blue';
+      p.roundPulls = 0;
+    });
+
+    // Keep spectators / eliminated players teamless
+    Object.values(this.players).forEach(p => {
+      if (p.status !== 'active') {
+        p.team = null;
+        p.roundPulls = 0;
+      }
+    });
   }
 
-  assignTeams();
+  startRound() {
+    const activePlayers = Object.values(this.players).filter(p => p.status === 'active');
+    if (activePlayers.length < 2) {
+      return;
+    }
 
-  gameState.status = 'ROUND_STARTING';
-  gameState.ropePos = 0;
-  gameState.ropeVelocity = 0;
-  gameState.teamRedScore = 0;
-  gameState.teamBlueScore = 0;
-  gameState.teamRedPulls = 0;
-  gameState.teamBluePulls = 0;
-  gameState.winnerTeam = null;
-  gameState.eliminatedThisRound = [];
-  gameState.survivorsThisRound = [];
-  gameState.countdownStartTime = Date.now();
+    this.assignTeams();
 
-  broadcastState();
+    this.status = 'ROUND_STARTING';
+    this.ropePos = 0;
+    this.teamRedScore = 0;
+    this.teamBlueScore = 0;
+    this.teamRedPulls = 0;
+    this.teamBluePulls = 0;
+    this.winnerTeam = null;
+    this.eliminatedThisRound = [];
+    this.survivorsThisRound = [];
+    this.countdownStartTime = Date.now();
 
-  // 3-second countdown before live pull
-  setTimeout(() => {
-    if (gameState.status !== 'ROUND_STARTING') return;
+    this.broadcastState();
 
-    gameState.status = 'ROUND_ACTIVE';
-    gameState.roundStartTime = Date.now();
-    gameState.roundEndTime = gameState.roundStartTime + (gameState.roundDuration * 1000);
+    // 3-second countdown before live pull
+    setTimeout(() => {
+      if (this.status !== 'ROUND_STARTING') return;
 
-    // Initialize bot pull timers
-    const now = Date.now();
-    Object.values(gameState.players).forEach(p => {
-      if (p.isBot && p.status === 'active') {
-        p.nextBotPullTime = now + 100 + Math.random() * 300;
+      this.status = 'ROUND_ACTIVE';
+      this.roundStartTime = Date.now();
+      this.roundEndTime = this.roundStartTime + (this.roundDuration * 1000);
+
+      // Initialize bot pull timers
+      const now = Date.now();
+      Object.values(this.players).forEach(p => {
+        if (p.isBot && p.status === 'active') {
+          p.nextBotPullTime = now + 100 + Math.random() * 300;
+        }
+      });
+
+      this.broadcastState();
+    }, 3000);
+  }
+
+  endRound(reason = 'time_up') {
+    if (this.status !== 'ROUND_ACTIVE') return;
+
+    let winner = null;
+    if (this.ropePos < -0.1) {
+      winner = 'red';
+    } else if (this.ropePos > 0.1) {
+      winner = 'blue';
+    } else {
+      if (this.teamRedScore > this.teamBlueScore) {
+        winner = 'red';
+      } else if (this.teamBlueScore > this.teamRedScore) {
+        winner = 'blue';
+      } else {
+        winner = Math.random() < 0.5 ? 'red' : 'blue';
+      }
+    }
+
+    this.winnerTeam = winner;
+    this.status = 'ROUND_ELIMINATION';
+
+    const eliminated = [];
+    const survivors = [];
+
+    Object.values(this.players).forEach(p => {
+      if (p.status === 'active') {
+        if (p.team === winner) {
+          survivors.push({ id: p.id, name: p.name, avatar: p.avatar, isBot: p.isBot });
+        } else {
+          p.status = 'eliminated';
+          eliminated.push({ id: p.id, name: p.name, avatar: p.avatar, isBot: p.isBot });
+        }
       }
     });
 
-    broadcastState();
-  }, 3000);
-}
+    this.eliminatedThisRound = eliminated;
+    this.survivorsThisRound = survivors;
 
-// Complete round and perform elimination
-function endRound(reason = 'time_up') {
-  if (gameState.status !== 'ROUND_ACTIVE') return;
+    const remainingActive = Object.values(this.players).filter(p => p.status === 'active');
 
-  // Determine winner:
-  // ropePos < 0 -> Red wins; ropePos > 0 -> Blue wins.
-  // If exactly 0, higher pull count wins.
-  let winner = null;
-  if (gameState.ropePos < -0.1) {
-    winner = 'red';
-  } else if (gameState.ropePos > 0.1) {
-    winner = 'blue';
-  } else {
-    if (gameState.teamRedScore > gameState.teamBlueScore) {
-      winner = 'red';
-    } else if (gameState.teamBlueScore > gameState.teamRedScore) {
-      winner = 'blue';
-    } else {
-      // Rare absolute tie -> coin flip
-      winner = Math.random() < 0.5 ? 'red' : 'blue';
+    // Championship check
+    if (remainingActive.length === 1) {
+      this.status = 'CHAMPIONSHIP';
+      this.champion = remainingActive[0];
+      this.broadcastState();
+      return;
+    } else if (remainingActive.length === 0) {
+      this.status = 'CHAMPIONSHIP';
+      this.champion = survivors[0] || null;
+      this.broadcastState();
+      return;
     }
-  }
 
-  gameState.winnerTeam = winner;
-  gameState.status = 'ROUND_ELIMINATION';
+    this.broadcastState();
 
-  const eliminated = [];
-  const survivors = [];
-
-  Object.values(gameState.players).forEach(p => {
-    if (p.status === 'active') {
-      if (p.team === winner) {
-        survivors.push({ id: p.id, name: p.name, avatar: p.avatar, isBot: p.isBot });
-      } else {
-        p.status = 'eliminated';
-        eliminated.push({ id: p.id, name: p.name, avatar: p.avatar, isBot: p.isBot });
-      }
-    }
-  });
-
-  gameState.eliminatedThisRound = eliminated;
-  gameState.survivorsThisRound = survivors;
-
-  // Check if tournament is finished
-  const remainingActive = Object.values(gameState.players).filter(p => p.status === 'active');
-
-  broadcastState();
-
-  // If 1 player remaining -> we have a champion!
-  if (remainingActive.length === 1) {
+    // Auto-advance to next round after 6s countdown
     setTimeout(() => {
-      gameState.status = 'CHAMPIONSHIP';
-      gameState.champion = remainingActive[0];
-      broadcastState();
-    }, 5000);
-  } else if (remainingActive.length === 0) {
-    // Should not happen, but safe fallback
-    gameState.status = 'LOBBY';
-    broadcastState();
-  } else {
-    // Advance to next round automatically after 6 seconds
-    setTimeout(() => {
-      if (gameState.status === 'ROUND_ELIMINATION') {
-        gameState.roundNumber += 1;
-        startRound();
+      if (this.status === 'ROUND_ELIMINATION') {
+        this.roundNumber += 1;
+        this.startRound();
       }
     }, 6000);
   }
+
+  handlePull(socketId, timestamp = Date.now()) {
+    const player = this.players[socketId];
+    if (!player || player.status !== 'active' || this.status !== 'ROUND_ACTIVE') {
+      return { success: false, reason: 'inactive' };
+    }
+
+    player.lastPullTime = timestamp;
+    player.roundPulls += 1;
+    player.totalPulls += 1;
+    player.combo = Math.min(50, (player.combo || 0) + 1);
+
+    if (player.team === 'red') {
+      this.teamRedPulls += 1;
+    } else if (player.team === 'blue') {
+      this.teamBluePulls += 1;
+    }
+    this.updateWeightedScores();
+
+    return {
+      success: true,
+      combo: player.combo,
+      team: player.team,
+      roundPulls: player.roundPulls
+    };
+  }
 }
 
-// 20Hz Server authoritative physics and bot simulation loop
+// Global Rooms Map
+const rooms = new Map();
+const socketToRoom = new Map();
+
+function getOrCreateRoom(rawRoomId = 'MAIN') {
+  const cleanId = (rawRoomId || 'MAIN').toString().trim().toUpperCase().slice(0, 12) || 'MAIN';
+  if (!rooms.has(cleanId)) {
+    rooms.set(cleanId, new Room(cleanId));
+  }
+  const room = rooms.get(cleanId);
+  room.lastActivity = Date.now();
+  return room;
+}
+
+// Authoritative Physics Loop for all active rooms (20Hz)
 setInterval(() => {
   const now = Date.now();
+  for (const room of rooms.values()) {
+    if (room.status === 'ROUND_ACTIVE') {
+      // 1. Process Bots
+      Object.values(room.players).forEach(p => {
+        if (p.isBot && p.status === 'active' && now >= p.nextBotPullTime) {
+          room.handlePull(p.id, now);
+          p.nextBotPullTime = now + p.botPullInterval + (Math.random() * 40 - 20);
+        }
+      });
 
-  if (gameState.status === 'ROUND_ACTIVE') {
-    // 1. Process Bots
-    Object.values(gameState.players).forEach(p => {
-      if (p.isBot && p.status === 'active' && now >= p.nextBotPullTime) {
-        handlePull(p.id, now);
-        p.nextBotPullTime = now + p.botPullInterval + (Math.random() * 40 - 20);
+      // 2. Physics computation for rope based on Weighted Average Score
+      const counts = room.getTeamCounts();
+      const redAvg = room.teamRedPulls / counts.red;
+      const blueAvg = room.teamBluePulls / counts.blue;
+      const avgDiff = blueAvg - redAvg;
+      const targetPos = Math.max(-100, Math.min(100, avgDiff * 6.5));
+
+      room.ropePos += (targetPos - room.ropePos) * 0.15;
+
+      // Check Knockout
+      if (room.ropePos <= -98) {
+        room.ropePos = -100;
+        room.endRound('knockout_red');
+        continue;
+      } else if (room.ropePos >= 98) {
+        room.ropePos = 100;
+        room.endRound('knockout_blue');
+        continue;
       }
-    });
 
-    // 2. Physics computation for rope based on Weighted Average Score
-    const counts = getTeamCounts();
-    const redAvg = gameState.teamRedPulls / counts.red;
-    const blueAvg = gameState.teamBluePulls / counts.blue;
-    // Net average pull difference: positive = Blue advantage, negative = Red advantage
-    const avgDiff = blueAvg - redAvg;
-    const targetPos = Math.max(-100, Math.min(100, avgDiff * 6.5));
+      // Check Time Up
+      if (now >= room.roundEndTime) {
+        room.endRound('time_up');
+        continue;
+      }
 
-    // Smooth toward targetPos with spring interpolation
-    gameState.ropePos += (targetPos - gameState.ropePos) * 0.15;
-
-    // Check KO (Knockout if rope pulled past -98 or +98)
-    if (gameState.ropePos <= -98) {
-      gameState.ropePos = -100;
-      endRound('knockout_red');
-      return;
-    } else if (gameState.ropePos >= 98) {
-      gameState.ropePos = 100;
-      endRound('knockout_blue');
-      return;
+      // High-frequency volatile sync to players in this room only
+      io.to(room.id).volatile.emit('physics_tick', {
+        ropePos: room.ropePos,
+        teamRedScore: room.teamRedScore,
+        teamBlueScore: room.teamBlueScore,
+        teamRedPulls: room.teamRedPulls,
+        teamBluePulls: room.teamBluePulls,
+        teamRedCount: counts.actualRed,
+        teamBlueCount: counts.actualBlue,
+        serverTime: now
+      });
     }
+  }
+}, 50);
 
-    // Check Time Up
-    if (now >= gameState.roundEndTime) {
-      endRound('time_up');
-      return;
+// Clean up inactive empty rooms every 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [roomId, room] of rooms.entries()) {
+    if (roomId !== 'MAIN' && Object.keys(room.players).length === 0 && now - room.lastActivity > 1800000) {
+      rooms.delete(roomId);
     }
-
-    // High-frequency volatile sync during active match (lowest latency, no buffer piling)
-    io.volatile.emit('physics_tick', {
-      ropePos: gameState.ropePos,
-      teamRedScore: gameState.teamRedScore,
-      teamBlueScore: gameState.teamBlueScore,
-      teamRedPulls: gameState.teamRedPulls,
-      teamBluePulls: gameState.teamBluePulls,
-      teamRedCount: counts.actualRed,
-      teamBlueCount: counts.actualBlue,
-      serverTime: now
-    });
   }
-}, 50); // 20 FPS physics loop
+}, 1800000);
 
-// Handle player pull action (Unlimited fast clicks allowed!)
-function handlePull(socketId, timestamp = Date.now()) {
-  const player = gameState.players[socketId];
-  if (!player || player.status !== 'active' || gameState.status !== 'ROUND_ACTIVE') {
-    return { success: false, reason: 'inactive' };
-  }
-
-  // Valid pull!
-  player.lastPullTime = timestamp;
-  player.roundPulls += 1;
-  player.totalPulls += 1;
-  player.combo = Math.min(50, (player.combo || 0) + 1);
-
-  if (player.team === 'red') {
-    gameState.teamRedPulls += 1;
-  } else if (player.team === 'blue') {
-    gameState.teamBluePulls += 1;
-  }
-  updateWeightedScores();
-
-  return {
-    success: true,
-    combo: player.combo,
-    team: player.team,
-    roundPulls: player.roundPulls
-  };
-}
-
-// SOCKET.IO CONNECTION HANDLING
+// SOCKET.IO EVENT ROUTING
 io.on('connection', (socket) => {
-  console.log(`Socket connected: ${socket.id}`);
+  // Send initial room state upon connection
+  const initialRoom = getOrCreateRoom('MAIN');
+  socket.emit('game_state', initialRoom.getPublicState());
 
-  // Assign first connector as host if none exists or if current host disconnected
-  const activeHost = gameState.hostSocketId ? io.sockets.sockets.get(gameState.hostSocketId) : null;
-  if (!gameState.hostSocketId || !activeHost) {
-    gameState.hostSocketId = socket.id;
-  }
-
-  // Clock sync request (for millisecond synchronized countdown)
+  // Clock sync request
   socket.on('sync_time', (clientSendTime) => {
     socket.emit('sync_time_reply', {
       clientSendTime,
@@ -395,186 +401,233 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Player joins with name and avatar
-  socket.on('join_game', ({ name, avatar }) => {
-    const sanitizedName = (name || `Player_${socket.id.slice(0, 4)}`).trim().slice(0, 16);
+  // Player joins a room
+  socket.on('join_game', ({ name, avatar = 0, roomId = 'MAIN' }) => {
+    const room = getOrCreateRoom(roomId);
     
-    // Validate host is alive
-    const currentHost = gameState.hostSocketId ? io.sockets.sockets.get(gameState.hostSocketId) : null;
-    if (!currentHost) {
-      gameState.hostSocketId = socket.id;
+    // Leave previous room if any
+    const oldRoomId = socketToRoom.get(socket.id);
+    if (oldRoomId && oldRoomId !== room.id && rooms.has(oldRoomId)) {
+      const oldRoom = rooms.get(oldRoomId);
+      delete oldRoom.players[socket.id];
+      socket.leave(oldRoom.id);
+      oldRoom.broadcastState();
     }
 
-    // Check if player already exists (reconnect)
-    if (gameState.players[socket.id]) {
-      gameState.players[socket.id].name = sanitizedName;
-      gameState.players[socket.id].avatar = avatar || 0;
+    socket.join(room.id);
+    socketToRoom.set(socket.id, room.id);
+
+    const sanitizedName = (name || 'Fighter').trim().slice(0, 14);
+
+    if (room.players[socket.id]) {
+      room.players[socket.id].name = sanitizedName;
+      room.players[socket.id].avatar = avatar || 0;
     } else {
       const player = new Player(socket.id, sanitizedName, false, avatar || 0);
-      // If round is currently active, join as spectator until next round
-      if (gameState.status !== 'LOBBY') {
+      if (room.status !== 'LOBBY') {
         player.status = 'spectator';
       }
-      gameState.players[socket.id] = player;
+      room.players[socket.id] = player;
+    }
+
+    // Assign host if none exists
+    const activeHost = room.hostSocketId ? io.sockets.sockets.get(room.hostSocketId) : null;
+    if (!room.hostSocketId || !activeHost) {
+      room.hostSocketId = socket.id;
     }
 
     socket.emit('join_confirmed', {
-      player: gameState.players[socket.id],
-      isHost: socket.id === gameState.hostSocketId
+      player: room.players[socket.id],
+      isHost: socket.id === room.hostSocketId,
+      roomId: room.id
     });
 
-    broadcastState();
+    room.broadcastState();
   });
 
-  // Player updates name
+  // Switch or Create Room
+  socket.on('switch_room', (newRoomId) => {
+    const targetRoom = getOrCreateRoom(newRoomId);
+    const currentRoomId = socketToRoom.get(socket.id);
+    let existingPlayer = null;
+
+    if (currentRoomId && rooms.has(currentRoomId)) {
+      const currentRoom = rooms.get(currentRoomId);
+      existingPlayer = currentRoom.players[socket.id];
+      delete currentRoom.players[socket.id];
+      socket.leave(currentRoom.id);
+      currentRoom.broadcastState();
+    }
+
+    socket.join(targetRoom.id);
+    socketToRoom.set(socket.id, targetRoom.id);
+
+    if (existingPlayer) {
+      targetRoom.players[socket.id] = existingPlayer;
+    }
+
+    if (!targetRoom.hostSocketId) {
+      targetRoom.hostSocketId = socket.id;
+    }
+
+    targetRoom.broadcastState();
+  });
+
+  // Update Player Name
   socket.on('update_name', (newName) => {
-    if (gameState.players[socket.id]) {
-      const sanitizedName = (newName || '').trim().slice(0, 14);
-      if (sanitizedName) {
-        gameState.players[socket.id].name = sanitizedName;
-        broadcastState();
+    const roomId = socketToRoom.get(socket.id);
+    const room = rooms.get(roomId);
+    if (room && room.players[socket.id]) {
+      const sanitized = (newName || '').trim().slice(0, 14);
+      if (sanitized) {
+        room.players[socket.id].name = sanitized;
+        room.broadcastState();
       }
     }
   });
 
-  // Claim or release host role
-  socket.on('claim_host', () => {
-    gameState.hostSocketId = socket.id;
-    broadcastState();
-  });
-
-  // Player leaves game
-  socket.on('leave_game', () => {
-    console.log(`Player left game: ${socket.id}`);
-    delete gameState.players[socket.id];
-
-    if (gameState.hostSocketId === socket.id) {
-      const realPlayers = Object.values(gameState.players).filter(p => !p.isBot);
-      gameState.hostSocketId = realPlayers.length > 0 ? realPlayers[0].id : null;
-    }
-
-    broadcastState();
-  });
-
-  // Pull button action
+  // Pull action
   socket.on('pull', (clientTime, callback) => {
-    const result = handlePull(socket.id, Date.now());
+    const roomId = socketToRoom.get(socket.id);
+    const room = rooms.get(roomId);
+    if (!room) return;
+    const result = room.handlePull(socket.id, clientTime);
     if (typeof callback === 'function') {
       callback(result);
     }
   });
 
-  // Cheer emote from spectators
+  // Spectator cheer
   socket.on('cheer', ({ team, emote }) => {
-    io.emit('cheer_event', {
-      team,
-      emote: emote || '❤️',
-      from: gameState.players[socket.id]?.name || 'Spectator'
-    });
-  });
-
-  // Host starts tournament
-  socket.on('start_tournament', () => {
-    if (socket.id !== gameState.hostSocketId && Object.keys(gameState.players).length > 0) {
-      // allow if only player or is host
-      if (socket.id !== gameState.hostSocketId) return;
-    }
-
-    // Reset all non-bot players to active
-    Object.values(gameState.players).forEach(p => {
-      p.status = 'active';
-      p.totalPulls = 0;
-      p.roundPulls = 0;
-    });
-
-    gameState.roundNumber = 1;
-    startRound();
-  });
-
-  // Host adjusts round duration
-  socket.on('set_round_duration', (duration) => {
-    if (socket.id === gameState.hostSocketId && duration >= 10 && duration <= 300) {
-      gameState.roundDuration = duration;
-      broadcastState();
+    const roomId = socketToRoom.get(socket.id);
+    if (roomId) {
+      io.to(roomId).emit('cheer_event', { team, emote, from: socket.id });
     }
   });
 
-  // Host adds bots for easy 50-player testing
-  socket.on('add_bots', (count = 10) => {
-    if (socket.id !== gameState.hostSocketId) return;
+  // Add bots
+  socket.on('add_bots', (count = 5) => {
+    const roomId = socketToRoom.get(socket.id);
+    const room = rooms.get(roomId);
+    if (!room || room.status !== 'LOBBY') return;
 
-    const currentCount = Object.keys(gameState.players).length;
-    const toAdd = Math.min(count, 64 - currentCount);
+    const availableNames = [...BOT_NAMES].sort(() => 0.5 - Math.random());
+    const existingNames = new Set(Object.values(room.players).map(p => p.name));
+    let added = 0;
 
-    for (let i = 0; i < toAdd; i++) {
-      const botId = `bot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const nameIndex = Math.floor(Math.random() * BOT_NAMES.length);
-      const botName = `${BOT_NAMES[nameIndex]}_${Math.floor(Math.random() * 90 + 10)}`;
-      const bot = new Player(botId, botName, true, Math.floor(Math.random() * 6));
-      gameState.players[botId] = bot;
+    for (const bName of availableNames) {
+      if (added >= count) break;
+      if (existingNames.has(bName)) continue;
+      const botId = `bot_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+      const avatar = Math.floor(Math.random() * 6);
+      room.players[botId] = new Player(botId, bName, true, avatar);
+      added++;
     }
 
-    broadcastState();
+    room.broadcastState();
   });
 
-  // Host clears all bots
+  // Clear bots
   socket.on('clear_bots', () => {
-    if (socket.id !== gameState.hostSocketId) return;
+    const roomId = socketToRoom.get(socket.id);
+    const room = rooms.get(roomId);
+    if (!room || room.status !== 'LOBBY') return;
 
-    Object.keys(gameState.players).forEach(id => {
-      if (gameState.players[id].isBot) {
-        delete gameState.players[id];
+    Object.keys(room.players).forEach(id => {
+      if (room.players[id].isBot) {
+        delete room.players[id];
       }
     });
 
-    broadcastState();
+    room.broadcastState();
   });
 
-  // Host resets tournament back to lobby
+  // Start Tournament
+  socket.on('start_tournament', () => {
+    const roomId = socketToRoom.get(socket.id);
+    const room = rooms.get(roomId);
+    if (room && room.status === 'LOBBY') {
+      room.roundNumber = 1;
+      room.champion = null;
+      Object.values(room.players).forEach(p => {
+        p.status = 'active';
+        p.roundPulls = 0;
+        p.totalPulls = 0;
+      });
+      room.startRound();
+    }
+  });
+
+  // Set round duration
+  socket.on('set_round_duration', (durationSec) => {
+    const roomId = socketToRoom.get(socket.id);
+    const room = rooms.get(roomId);
+    if (room && room.status === 'LOBBY' && room.hostSocketId === socket.id) {
+      room.roundDuration = Math.max(10, Math.min(300, parseInt(durationSec, 10) || 60));
+      room.broadcastState();
+    }
+  });
+
+  // Reset tournament
   socket.on('reset_tournament', () => {
-    if (socket.id !== gameState.hostSocketId) return;
+    const roomId = socketToRoom.get(socket.id);
+    const room = rooms.get(roomId);
+    if (room) {
+      room.status = 'LOBBY';
+      room.roundNumber = 1;
+      room.ropePos = 0;
+      room.teamRedScore = 0;
+      room.teamBlueScore = 0;
+      room.teamRedPulls = 0;
+      room.teamBluePulls = 0;
+      room.winnerTeam = null;
+      room.champion = null;
+      Object.values(room.players).forEach(p => {
+        p.status = 'active';
+        p.team = null;
+        p.roundPulls = 0;
+        p.totalPulls = 0;
+      });
+      room.broadcastState();
+    }
+  });
 
-    gameState.status = 'LOBBY';
-    gameState.roundNumber = 1;
-    gameState.ropePos = 0;
-    gameState.winnerTeam = null;
-    gameState.champion = null;
-    gameState.eliminatedThisRound = [];
-    gameState.survivorsThisRound = [];
-
-    Object.values(gameState.players).forEach(p => {
-      p.status = 'active';
-      p.team = null;
-      p.roundPulls = 0;
-      p.totalPulls = 0;
-    });
-
-    broadcastState();
+  // Leave Game
+  socket.on('leave_game', () => {
+    const roomId = socketToRoom.get(socket.id);
+    const room = rooms.get(roomId);
+    if (room) {
+      delete room.players[socket.id];
+      if (room.hostSocketId === socket.id) {
+        const realPlayers = Object.values(room.players).filter(p => !p.isBot);
+        room.hostSocketId = realPlayers.length > 0 ? realPlayers[0].id : null;
+      }
+      room.broadcastState();
+    }
+    socketToRoom.delete(socket.id);
+    socket.leave(roomId);
   });
 
   // Disconnect
   socket.on('disconnect', () => {
-    console.log(`Socket disconnected: ${socket.id}`);
-    delete gameState.players[socket.id];
-
-    if (gameState.hostSocketId === socket.id) {
-      // Reassign host to next available real player
-      const realPlayers = Object.values(gameState.players).filter(p => !p.isBot);
-      gameState.hostSocketId = realPlayers.length > 0 ? realPlayers[0].id : null;
+    const roomId = socketToRoom.get(socket.id);
+    const room = rooms.get(roomId);
+    if (room) {
+      delete room.players[socket.id];
+      if (room.hostSocketId === socket.id) {
+        const realPlayers = Object.values(room.players).filter(p => !p.isBot);
+        room.hostSocketId = realPlayers.length > 0 ? realPlayers[0].id : null;
+      }
+      room.broadcastState();
     }
-
-    broadcastState();
+    socketToRoom.delete(socket.id);
   });
-
-  // Initial state on connect
-  socket.emit('game_state', getPublicState());
 });
 
 // REST endpoint for status & network info
 app.get('/api/info', (req, res) => {
   res.json({
-    status: gameState.status,
-    playerCount: Object.keys(gameState.players).length,
+    totalRooms: rooms.size,
     localIp,
     port: PORT
   });
@@ -595,7 +648,7 @@ if (fs.existsSync(clientDistPath)) {
 
 server.listen(PORT, () => {
   console.log(`=============================================`);
-  console.log(`🎮 CROWD TUG-OF-WAR SERVER RUNNING`);
+  console.log(`🎮 CROWD TUG-OF-WAR SERVER RUNNING (MULTI-ROOM)`);
   console.log(`Local:   http://localhost:${PORT}`);
   console.log(`Network: http://${localIp}:${PORT}`);
   console.log(`=============================================`);

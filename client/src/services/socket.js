@@ -45,8 +45,12 @@ export const socketService = {
     return latency;
   },
 
-  joinGame(name, avatar = 0) {
-    socket.emit('join_game', { name, avatar });
+  joinGame(name, avatar = 0, roomId = 'MAIN') {
+    socket.emit('join_game', { name, avatar, roomId });
+  },
+
+  switchRoom(roomId) {
+    socket.emit('switch_room', roomId);
   },
 
   updateName(name) {

@@ -45,6 +45,41 @@ export default function App() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameInput, setEditNameInput] = useState('');
 
+  // Room Code: detected from ?room=... or localStorage or generated
+  const [roomId, setRoomId] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const roomParam = params.get('room');
+    if (roomParam) {
+      return roomParam.toUpperCase().slice(0, 12);
+    }
+    const savedRoom = localStorage.getItem('tug_room_id');
+    if (savedRoom) {
+      return savedRoom.toUpperCase().slice(0, 12);
+    }
+    return `WAR-${Math.floor(1000 + Math.random() * 9000)}`;
+  });
+
+  // Keep URL and localStorage in sync with current room code
+  useEffect(() => {
+    localStorage.setItem('tug_room_id', roomId);
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', roomId);
+    window.history.replaceState({}, '', url.toString());
+  }, [roomId]);
+
+  const handleSwitchRoom = (newRoomCode) => {
+    const cleanRoom = (newRoomCode || '').trim().toUpperCase().slice(0, 12);
+    if (!cleanRoom) return;
+    setRoomId(cleanRoom);
+    socketService.switchRoom(cleanRoom);
+    soundService.playVictory();
+  };
+
+  const handleCreateRoom = () => {
+    const newRoomCode = `WAR-${Math.floor(1000 + Math.random() * 9000)}`;
+    handleSwitchRoom(newRoomCode);
+  };
+
   // Socket event listeners
   useEffect(() => {
     const socket = socketService.socket;
@@ -56,7 +91,7 @@ export default function App() {
       if (savedName) {
         setPlayerName(savedName);
         setPlayerAvatar(savedAvatar);
-        socketService.joinGame(savedName, savedAvatar);
+        socketService.joinGame(savedName, savedAvatar, roomId);
         setHasJoined(true);
       } else {
         setShowJoinModal(true);
@@ -296,6 +331,15 @@ export default function App() {
                 🚪 ออกจากเกม
               </button>
             )}
+
+            {/* Room Code Badge */}
+            <div
+              className="hidden sm:flex items-center gap-1 px-2 py-1 bg-[#0a0d18] border-2 border-yellow-400 text-xs font-arcade text-yellow-300 shadow-sm select-all"
+              title="รหัสห้องแข่งขัน"
+            >
+              <span>🔑</span>
+              <span>#{roomId}</span>
+            </div>
           </div>
         </div>
       </header>
@@ -305,12 +349,15 @@ export default function App() {
         {/* LOBBY STATE */}
         {gameState.status === 'LOBBY' && (
           <LobbyScreen
+            roomId={roomId}
             players={gameState.players}
             isHost={isHost}
             roundDuration={gameState.roundDuration}
             currentSocketId={currentSocketId}
             localIp={gameState.localIp}
             onLeaveGame={handleLeaveGame}
+            onSwitchRoom={handleSwitchRoom}
+            onCreateRoom={handleCreateRoom}
           />
         )}
 
@@ -441,11 +488,13 @@ export default function App() {
       {/* Player Join Name Modal */}
       <JoinModal
         isOpen={showJoinModal && !hasJoined}
+        roomId={roomId}
         onJoined={({ name, avatar }) => {
           setPlayerName(name);
           setPlayerAvatar(avatar);
           setHasJoined(true);
           setShowJoinModal(false);
+          socketService.joinGame(name, avatar, roomId);
         }}
       />
     </div>
