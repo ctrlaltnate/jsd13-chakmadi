@@ -10,6 +10,7 @@ import PullController from './components/PullController';
 import RoundStartingModal from './components/RoundStartingModal';
 import RoundSummaryScreen from './components/RoundSummaryScreen';
 import ChampionScreen from './components/ChampionScreen';
+import SettingsModal from './components/SettingsModal';
 
 const AVATARS_ICON = ['🥊', '⚔️', '🥷', '🧙‍♂️', '🤖', '🏴‍☠️'];
 
@@ -40,6 +41,7 @@ export default function App() {
   const [hasJoined, setHasJoined] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [playerAvatar, setPlayerAvatar] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
@@ -196,93 +198,49 @@ export default function App() {
       <header className="sticky top-0 z-40 bg-[#0f1322]/95 backdrop-blur-xs border-b-2 sm:border-b-3 border-[#334155] px-2.5 sm:px-4 py-1 sm:py-1.5 select-none shadow-md shrink-0">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
           {/* Logo & Title */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <span className="text-xl sm:text-2xl animate-pulse">🥊</span>
             <div>
-              <div className="font-arcade text-xs sm:text-sm text-white pixel-text-shadow">
+              <div className="font-arcade text-xs sm:text-sm text-white pixel-text-shadow leading-tight">
                 CROWD TUG-OF-WAR
               </div>
-              <div className="font-ui text-[11px] text-yellow-300 font-bold hidden xs:block">
+              <div className="font-ui text-[10px] text-yellow-300 font-bold hidden xs:block">
                 UNIFIED ARENA
               </div>
             </div>
           </div>
 
-          {/* Action Buttons & Player Profile */}
+          {/* Clean Top Bar: Player Profile Badge & Settings Button */}
           <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Share Link Button */}
-            <button
-              type="button"
-              onClick={handleCopyInviteLink}
-              title="คัดลอกลิงก์เกมให้เพื่อนเข้าเล่น"
-              className="px-2.5 py-1 text-xs font-ui font-extrabold pixel-btn pixel-btn-gold text-black cursor-pointer flex items-center gap-1 shadow-sm"
-            >
-              <span>{copiedLink ? '✅' : '📋'}</span>
-              <span className="hidden xs:inline">{copiedLink ? 'คัดลอกแล้ว!' : 'แชร์ลิงก์เกม'}</span>
-            </button>
-
             {/* Player Profile Badge with Avatar and Pencil Edit Button */}
             {myPlayer && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-[#171c2f] border border-gray-600 text-xs font-ui font-extrabold text-white">
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(true)}
+                title="คลิกเพื่อแก้ไขชื่อและเปลี่ยนอวาตาร์ตัวละคร"
+                className="flex items-center gap-1 px-2 py-1 bg-[#171c2f] border border-gray-600 hover:border-yellow-400 text-xs font-ui font-extrabold text-white cursor-pointer transition-colors shadow-xs"
+              >
                 <span className="text-sm">{AVATARS_ICON[myPlayer.avatar] || '🥊'}</span>
-                <span className="truncate max-w-[80px] sm:max-w-[110px]">{myPlayer.name}</span>
+                <span className="truncate max-w-[70px] xs:max-w-[100px] sm:max-w-[120px]">{myPlayer.name}</span>
                 {myPlayer.team && (
                   <span className={`px-1 text-[9px] uppercase font-arcade ${myPlayer.team === 'red' ? 'bg-red-700 text-white' : 'bg-blue-700 text-white'}`}>
                     {myPlayer.team}
                   </span>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setShowProfileModal(true)}
-                  title="แก้ไขชื่อและเปลี่ยนอวาตาร์ตัวละคร"
-                  className="ml-1 text-yellow-400 hover:text-yellow-300 transition-transform cursor-pointer p-0.5 hover:scale-120"
-                >
-                  ✏️
-                </button>
-              </div>
-            )}
-
-            {/* CRT Toggle */}
-            <button
-              type="button"
-              onClick={() => setScanlines(!scanlines)}
-              title="Toggle CRT Scanlines"
-              className={`px-2 py-1 text-xs font-ui font-extrabold pixel-btn cursor-pointer ${scanlines ? 'pixel-btn-gold text-black' : ''}`}
-            >
-              CRT
-            </button>
-
-            {/* SFX Mute Button */}
-            <button
-              type="button"
-              onClick={handleToggleMute}
-              title="Toggle Sound Effects"
-              className={`px-2 py-1 text-xs font-ui font-extrabold pixel-btn cursor-pointer ${isMuted ? 'opacity-60' : 'pixel-btn-green text-white'}`}
-            >
-              {isMuted ? '🔇' : '🔊'}
-            </button>
-
-            {/* BGM Toggle */}
-            <button
-              type="button"
-              onClick={handleToggleBGM}
-              title="Toggle Music"
-              className={`px-2 py-1 text-xs font-ui font-extrabold pixel-btn cursor-pointer ${bgmActive ? 'pixel-btn-gold text-black' : ''}`}
-            >
-              🎵
-            </button>
-
-            {/* Leave Game Button */}
-            {hasJoined && (
-              <button
-                type="button"
-                onClick={handleLeaveGame}
-                title="ออกจากเกม (Leave Game)"
-                className="px-2 py-1 text-xs font-ui font-extrabold pixel-btn pixel-btn-red text-white cursor-pointer"
-              >
-                🚪
+                <span className="text-yellow-400 ml-0.5 text-[11px]">✏️</span>
               </button>
             )}
+
+            {/* Settings Modal Button */}
+            <button
+              type="button"
+              onClick={() => setShowSettingsModal(true)}
+              title="การตั้งค่าระบบ (Settings: เสียง, เพลง, แชร์ลิงก์, ออกเกม)"
+              className="px-2.5 py-1 text-xs font-ui font-extrabold pixel-btn pixel-btn-gold text-black cursor-pointer flex items-center gap-1 shadow-sm hover:scale-105 transition-transform"
+            >
+              <span className="text-sm">⚙️</span>
+              <span className="hidden xs:inline">ตั้งค่า</span>
+            </button>
           </div>
         </div>
       </header>
@@ -454,6 +412,21 @@ export default function App() {
           setPlayerAvatar(avatar);
           setShowProfileModal(false);
         }}
+      />
+
+      {/* Settings Modal Popup */}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        isMuted={isMuted}
+        onToggleMute={handleToggleMute}
+        bgmActive={bgmActive}
+        onToggleBgm={handleToggleBGM}
+        scanlines={scanlines}
+        onToggleScanlines={() => setScanlines(!scanlines)}
+        onOpenEditProfile={() => setShowProfileModal(true)}
+        onLeaveGame={handleLeaveGame}
+        hasJoined={hasJoined}
       />
     </div>
   );
