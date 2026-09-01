@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { socketService } from './services/socket';
 import { soundService } from './services/sound';
 import JoinModal from './components/JoinModal';
+import JoinRoomModal from './components/JoinRoomModal';
+import WelcomeScreen from './components/WelcomeScreen';
 import LobbyScreen from './components/LobbyScreen';
 import Scoreboard from './components/Scoreboard';
 import TugCanvas from './components/TugCanvas';
@@ -26,6 +28,7 @@ export default function App() {
     teamBluePulls: 0,
     players: [],
     hostSocketId: null,
+    hostName: '',
     eliminatedThisRound: [],
     survivorsThisRound: [],
     winnerTeam: null,
@@ -36,6 +39,7 @@ export default function App() {
   const [currentSocketId, setCurrentSocketId] = useState(null);
   const [hasJoined, setHasJoined] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showJoinRoomModal, setShowJoinRoomModal] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [playerAvatar, setPlayerAvatar] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
@@ -45,7 +49,13 @@ export default function App() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameInput, setEditNameInput] = useState('');
 
-  // Room Code: detected from ?room=... or localStorage or generated
+  // 6-Character Room Code Generator: JSD + 3 digits (e.g. JSD123, JSD888)
+  const generateJsdCode = () => {
+    const digits = Math.floor(100 + Math.random() * 900);
+    return `JSD${digits}`;
+  };
+
+  // Room Code: from ?room=... or localStorage, or null for first-time arrival
   const [roomId, setRoomId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
@@ -56,28 +66,66 @@ export default function App() {
     if (savedRoom) {
       return savedRoom.toUpperCase().slice(0, 12);
     }
-    return `WAR-${Math.floor(1000 + Math.random() * 9000)}`;
+    return null; // When null, visitor sees WelcomeScreen to choose Create or Join Room
   });
 
   // Keep URL and localStorage in sync with current room code
   useEffect(() => {
-    localStorage.setItem('tug_room_id', roomId);
-    const url = new URL(window.location.href);
-    url.searchParams.set('room', roomId);
-    window.history.replaceState({}, '', url.toString());
+    if (roomId) {
+      localStorage.setItem('tug_room_id', roomId);
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', roomId);
+      window.history.replaceState({}, '', url.toString());
+    }
   }, [roomId]);
 
+  // Switch or Join Room
   const handleSwitchRoom = (newRoomCode) => {
-    const cleanRoom = (newRoomCode || '').trim().toUpperCase().slice(0, 12);
+    let cleanRoom = (newRoomCode || '').trim().toUpperCase().slice(0, 12);
     if (!cleanRoom) return;
+    if (/^\d{3}$/.test(cleanRoom)) {
+      cleanRoom = `JSD${cleanRoom}`;
+    }
     setRoomId(cleanRoom);
-    socketService.switchRoom(cleanRoom);
     soundService.playVictory();
+    const savedName = localStorage.getItem('tug_player_name') || playerName;
+    const savedAvatar = parseInt(localStorage.getItem('tug_player_avatar') || `${playerAvatar}`, 10);
+    if (savedName) {
+      socketService.switchRoom(cleanRoom);
+      setHasJoined(true);
+    } else {
+      setShowJoinModal(true);
+    }
   };
 
+  // Create Room as Owner (JSD + 3 digits)
   const handleCreateRoom = () => {
-    const newRoomCode = `WAR-${Math.floor(1000 + Math.random() * 9000)}`;
-    handleSwitchRoom(newRoomCode);
+    const newRoomCode = generateJsdCode();
+    setRoomId(newRoomCode);
+    soundService.playVictory();
+    const savedName = localStorage.getItem('tug_player_name');
+    const savedAvatar = parseInt(localStorage.getItem('tug_player_avatar') || '0', 10);
+    if (savedName) {
+      socketService.joinGame(savedName, savedAvatar, newRoomCode);
+      setHasJoined(true);
+      setShowJoinModal(false);
+    } else {
+      setShowJoinModal(true);
+    }
+  };
+
+  // Copy Room Link
+  const handleCopyRoomLink = () => {
+    if (!roomId) return;
+    const origin = window.location.origin;
+    const shareUrl = `${origin}/?room=${encodeURIComponent(roomId)}`;
+    try {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(shareUrl);
+      }
+    } catch (e) {}
+    soundService.playCheer();
+    alert(`📋 คัดลอกลิงก์ห้อง #${roomId} แล้ว! ส่งต่อให้เพื่อนเข้าเล่นได้ทันที`);
   };
 
   // Socket event listeners
@@ -88,13 +136,15 @@ export default function App() {
       setCurrentSocketId(socket.id);
       const savedName = localStorage.getItem('tug_player_name');
       const savedAvatar = parseInt(localStorage.getItem('tug_player_avatar') || '0', 10);
-      if (savedName) {
-        setPlayerName(savedName);
-        setPlayerAvatar(savedAvatar);
-        socketService.joinGame(savedName, savedAvatar, roomId);
-        setHasJoined(true);
-      } else {
-        setShowJoinModal(true);
+      if (roomId) {
+        if (savedName) {
+          setPlayerName(savedName);
+          setPlayerAvatar(savedAvatar);
+          socketService.joinGame(savedName, savedAvatar, roomId);
+          setHasJoined(true);
+        } else {
+          setShowJoinModal(true);
+        }
       }
     });
 
@@ -127,12 +177,18 @@ export default function App() {
       });
     });
 
-    socket.on('join_confirmed', ({ player }) => {
+    socket.on('join_confirmed', ({ player, isHost, hostToken, roomId: confirmedRoomId }) => {
       if (player) {
         setPlayerName(player.name);
         setPlayerAvatar(player.avatar);
         setHasJoined(true);
         setShowJoinModal(false);
+        if (confirmedRoomId) {
+          setRoomId(confirmedRoomId);
+        }
+        if (isHost && hostToken && confirmedRoomId) {
+          localStorage.setItem(`tug_host_token_${confirmedRoomId}`, hostToken);
+        }
       }
     });
 
@@ -140,10 +196,20 @@ export default function App() {
       const particleId = Date.now() + Math.random();
       const x = team === 'red' ? 120 + Math.random() * 100 : 580 + Math.random() * 100;
       const y = 140 + Math.random() * 60;
-      setCheerParticles((prev) => [...prev.slice(-12), { id: particleId, x, y, emote, from }]);
+      setCheerParticles((prev) => [...prev.slice(-15), { id: particleId, x, y, emote }]);
       setTimeout(() => {
         setCheerParticles((prev) => prev.filter((p) => p.id !== particleId));
-      }, 2000);
+      }, 1200);
+    });
+
+    socket.on('round_started', () => {
+      soundService.playVictory();
+    });
+
+    socket.on('round_ended', ({ winnerTeam }) => {
+      if (winnerTeam) {
+        soundService.playVictory();
+      }
     });
 
     return () => {
@@ -152,57 +218,35 @@ export default function App() {
       socket.off('physics_tick');
       socket.off('join_confirmed');
       socket.off('cheer_event');
+      socket.off('round_started');
+      socket.off('round_ended');
     };
   }, [roomId]);
 
-  // Sound toggles
+  // Audio Toggles
   const handleToggleMute = () => {
-    const muted = soundService.toggleMute();
-    setIsMuted(muted);
-    if (muted) setBgmActive(false);
+    const nextMute = !isMuted;
+    setIsMuted(nextMute);
+    soundService.setMuted(nextMute);
   };
 
   const handleToggleBGM = () => {
-    if (bgmActive) {
-      soundService.stopBGM();
-      setBgmActive(false);
-    } else {
-      soundService.startBGM();
-      setBgmActive(true);
-    }
+    const nextBgm = !bgmActive;
+    setBgmActive(nextBgm);
+    soundService.setBgmActive(nextBgm);
   };
 
-  // Auto-start BGM on page load or upon first user touch/click (browser autoplay policy)
-  useEffect(() => {
-    if (bgmActive && !isMuted) {
-      soundService.startBGM();
-      const unlockAudio = () => {
-        soundService.startBGM();
-        window.removeEventListener('pointerdown', unlockAudio);
-        window.removeEventListener('keydown', unlockAudio);
-      };
-      window.addEventListener('pointerdown', unlockAudio);
-      window.addEventListener('keydown', unlockAudio);
-
-      return () => {
-        window.removeEventListener('pointerdown', unlockAudio);
-        window.removeEventListener('keydown', unlockAudio);
-      };
-    } else {
-      soundService.stopBGM();
-    }
-  }, [bgmActive, isMuted]);
-
-  // Leave Game handler
+  // Leave Game
   const handleLeaveGame = () => {
     if (window.confirm('คุณต้องการออกจากเกมหรือไม่? (Are you sure you want to leave the game?)')) {
       soundService.playWarning();
       socketService.leaveGame();
-      localStorage.removeItem('tug_player_name');
-      localStorage.removeItem('tug_player_avatar');
       setHasJoined(false);
-      setPlayerName('');
-      setShowJoinModal(true);
+      localStorage.removeItem('tug_room_id');
+      setRoomId(null);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('room');
+      window.history.replaceState({}, '', url.toString());
     }
   };
 
@@ -215,18 +259,17 @@ export default function App() {
   const handleSaveEditName = (e) => {
     if (e) e.preventDefault();
     const clean = editNameInput.trim();
-    if (!clean) return;
-    socketService.updateName(clean);
-    socketService.joinGame(clean, playerAvatar);
-    localStorage.setItem('tug_player_name', clean);
-    setPlayerName(clean);
+    if (clean) {
+      setPlayerName(clean);
+      localStorage.setItem('tug_player_name', clean);
+      socketService.updateName(clean);
+    }
     setIsEditingName(false);
-    soundService.playCheer();
   };
 
-  // Find current player info
+  // Resolve my player object
   const myPlayer = gameState.players.find((p) => p.id === currentSocketId);
-  const isHost = gameState.hostSocketId === currentSocketId;
+  const isHost = currentSocketId && gameState.hostSocketId === currentSocketId;
   const activeSurvivors = gameState.players.filter((p) => p.status === 'active');
 
   return (
@@ -238,7 +281,7 @@ export default function App() {
       <header className="sticky top-0 z-40 bg-[#0f1322]/95 backdrop-blur-xs border-b-2 sm:border-b-3 border-[#334155] px-2.5 sm:px-4 py-1 sm:py-1.5 select-none shadow-md shrink-0">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
           {/* Logo & Title */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => !roomId && setRoomId(null)}>
             <span className="text-xl sm:text-2xl animate-pulse">🥊</span>
             <div>
               <div className="font-arcade text-xs sm:text-sm text-white pixel-text-shadow">
@@ -250,8 +293,44 @@ export default function App() {
             </div>
           </div>
 
-          {/* Player Badge & Audio/Visual Toggles */}
+          {/* Action Buttons & Room Tools */}
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Create Room Button */}
+            <button
+              type="button"
+              onClick={handleCreateRoom}
+              title="สร้างห้องแข่งขันใหม่ (Create New Room)"
+              className="px-2 py-1 text-xs font-ui font-extrabold pixel-btn pixel-btn-gold text-black cursor-pointer flex items-center gap-1"
+            >
+              <span>➕</span>
+              <span className="hidden xs:inline">สร้างห้อง</span>
+            </button>
+
+            {/* Join Room Button */}
+            <button
+              type="button"
+              onClick={() => setShowJoinRoomModal(true)}
+              title="กดเข้าห้องด้วยรหัส 6 ตัว (Join Room)"
+              className="px-2 py-1 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer flex items-center gap-1"
+            >
+              <span>🔑</span>
+              <span className="hidden xs:inline">เข้าห้อง</span>
+            </button>
+
+            {/* Room Code Badge (Clickable to copy link) */}
+            {roomId && (
+              <button
+                type="button"
+                onClick={handleCopyRoomLink}
+                className="flex items-center gap-1 px-2 py-1 bg-[#0a0d18] border-2 border-yellow-400 text-xs font-arcade text-yellow-300 shadow-sm cursor-pointer hover:bg-yellow-950/40"
+                title="คลิกเพื่อคัดลอกลิงก์ห้องแข่งขัน"
+              >
+                <span>🔑</span>
+                <span>#{roomId}</span>
+              </button>
+            )}
+
+            {/* Player Badge & Audio/Visual Toggles */}
             {myPlayer && (
               isEditingName ? (
                 <form onSubmit={handleSaveEditName} className="flex items-center gap-1">
@@ -262,55 +341,36 @@ export default function App() {
                     maxLength={14}
                     autoFocus
                     placeholder="ชื่อใหม่..."
-                    className="px-2 py-0.5 bg-[#090c14] border-2 border-yellow-400 text-white font-ui font-extrabold text-xs outline-hidden w-24 sm:w-32 shadow-inner"
+                    className="px-2 py-0.5 bg-[#090c14] border-2 border-yellow-400 text-white font-ui font-extrabold text-xs outline-hidden w-20 sm:w-28 shadow-inner"
                   />
                   <button
                     type="submit"
-                    title="กดเพื่อบันทึกชื่อ (Save Name)"
-                    className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white font-ui font-extrabold text-xs pixel-btn cursor-pointer"
+                    title="บันทึกชื่อ"
+                    className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white font-ui font-extrabold text-xs pixel-btn cursor-pointer"
                   >
-                    💾 บันทึก
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingName(false)}
-                    title="ยกเลิก (Cancel)"
-                    className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 text-white font-ui font-bold text-xs pixel-btn cursor-pointer"
-                  >
-                    ✕
+                    💾
                   </button>
                 </form>
               ) : (
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-[#171c2f] border border-gray-600 text-xs font-ui font-extrabold text-white">
+                <div className="hidden md:flex items-center gap-1 px-2 py-0.5 bg-[#171c2f] border border-gray-600 text-xs font-ui font-extrabold text-white">
                   <span>⭐</span>
-                  <span className="truncate max-w-[80px] sm:max-w-[120px]">{myPlayer.name}</span>
+                  <span className="truncate max-w-[80px] sm:max-w-[110px]">{myPlayer.name}</span>
                   {myPlayer.team && (
-                    <span className={`px-1 text-[10px] uppercase font-arcade ${myPlayer.team === 'red' ? 'bg-red-700 text-white' : 'bg-blue-700 text-white'}`}>
+                    <span className={`px-1 text-[9px] uppercase font-arcade ${myPlayer.team === 'red' ? 'bg-red-700 text-white' : 'bg-blue-700 text-white'}`}>
                       {myPlayer.team}
                     </span>
                   )}
-                  {/* Pencil Edit Button */}
                   <button
                     type="button"
                     onClick={handleStartEditName}
-                    title="กดดินสอเพื่อแก้ไขชื่อ (Edit Name)"
-                    className="ml-1 text-yellow-400 hover:text-yellow-300 hover:scale-125 transition-transform cursor-pointer p-0.5"
+                    title="แก้ไขชื่อ"
+                    className="ml-1 text-yellow-400 hover:text-yellow-300 transition-transform cursor-pointer p-0.5"
                   >
                     ✏️
                   </button>
                 </div>
               )
             )}
-
-            {/* CRT Toggle */}
-            <button
-              type="button"
-              onClick={() => setScanlines(!scanlines)}
-              title="Toggle CRT Scanlines"
-              className={`px-2 py-1 text-xs font-ui font-extrabold pixel-btn cursor-pointer ${scanlines ? 'pixel-btn-gold text-black' : ''}`}
-            >
-              CRT
-            </button>
 
             {/* SFX Mute Button */}
             <button
@@ -319,17 +379,17 @@ export default function App() {
               title="Toggle Sound Effects"
               className={`px-2 py-1 text-xs font-ui font-extrabold pixel-btn cursor-pointer ${isMuted ? 'opacity-60' : 'pixel-btn-green text-white'}`}
             >
-              {isMuted ? '🔇 เสียงปิด' : '🔊 SFX'}
+              {isMuted ? '🔇' : '🔊'}
             </button>
 
             {/* BGM Toggle */}
             <button
               type="button"
               onClick={handleToggleBGM}
-              title="Toggle 8-Bit Chiptune Music"
+              title="Toggle Music"
               className={`px-2 py-1 text-xs font-ui font-extrabold pixel-btn cursor-pointer ${bgmActive ? 'pixel-btn-gold text-black' : ''}`}
             >
-              🎵 BGM
+              🎵
             </button>
 
             {/* Leave Game Button */}
@@ -337,29 +397,28 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleLeaveGame}
-                title="ออกจากเกม (Leave Game)"
+                title="ออกจากห้อง (Leave Room)"
                 className="px-2 py-1 text-xs font-ui font-extrabold pixel-btn pixel-btn-red text-white cursor-pointer"
               >
-                🚪 ออกจากเกม
+                🚪
               </button>
             )}
-
-            {/* Room Code Badge */}
-            <div
-              className="hidden sm:flex items-center gap-1 px-2 py-1 bg-[#0a0d18] border-2 border-yellow-400 text-xs font-arcade text-yellow-300 shadow-sm select-all"
-              title="รหัสห้องแข่งขัน"
-            >
-              <span>🔑</span>
-              <span>#{roomId}</span>
-            </div>
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
       <main className={`flex-1 max-w-6xl w-full mx-auto p-1 sm:p-2.5 flex flex-col ${gameState.status === 'ROUND_ACTIVE' ? 'justify-between overflow-hidden' : 'justify-center'}`}>
+        {/* FIRST-TIME / WELCOME GATEWAY (If no room chosen yet) */}
+        {!roomId && !hasJoined && (
+          <WelcomeScreen
+            onCreateRoom={handleCreateRoom}
+            onOpenJoinModal={() => setShowJoinRoomModal(true)}
+          />
+        )}
+
         {/* LOBBY STATE */}
-        {gameState.status === 'LOBBY' && (
+        {roomId && gameState.status === 'LOBBY' && (
           <LobbyScreen
             roomId={roomId}
             players={gameState.players}
@@ -367,6 +426,7 @@ export default function App() {
             roundDuration={gameState.roundDuration}
             currentSocketId={currentSocketId}
             localIp={gameState.localIp}
+            myPlayer={myPlayer}
             onLeaveGame={handleLeaveGame}
             onSwitchRoom={handleSwitchRoom}
             onCreateRoom={handleCreateRoom}
@@ -374,7 +434,7 @@ export default function App() {
         )}
 
         {/* ROUND STARTING (3...2...1 Countdown Overlay) */}
-        {gameState.status === 'ROUND_STARTING' && (
+        {roomId && gameState.status === 'ROUND_STARTING' && (
           <>
             <Scoreboard
               roundNumber={gameState.roundNumber}
@@ -403,7 +463,7 @@ export default function App() {
         )}
 
         {/* ROUND ACTIVE STATE - 3-Column layout on desktop, perfectly fits screen on mobile */}
-        {gameState.status === 'ROUND_ACTIVE' && (
+        {roomId && gameState.status === 'ROUND_ACTIVE' && (
           <div className="w-full flex flex-col lg:flex-row items-stretch justify-center gap-1.5 lg:gap-3 flex-1 overflow-hidden">
             {/* LEFT SIDEBAR: TEAM RED (DESKTOP) */}
             <div className="hidden lg:block w-56 xl:w-64 shrink-0 overflow-y-auto max-h-[82vh]">
@@ -463,7 +523,7 @@ export default function App() {
         )}
 
         {/* ROUND ELIMINATION / KNOCKOUT SUMMARY */}
-        {gameState.status === 'ROUND_ELIMINATION' && (
+        {roomId && gameState.status === 'ROUND_ELIMINATION' && (
           <RoundSummaryScreen
             roundNumber={gameState.roundNumber}
             winnerTeam={gameState.winnerTeam}
@@ -475,12 +535,18 @@ export default function App() {
         )}
 
         {/* CHAMPIONSHIP SHOWDOWN / TROPHY */}
-        {gameState.status === 'CHAMPIONSHIP' && (
+        {roomId && gameState.status === 'CHAMPIONSHIP' && (
           <ChampionScreen
             champion={gameState.champion}
             players={gameState.players}
             isHost={isHost}
             currentSocketId={currentSocketId}
+            onRejoinGame={() => {
+              socketService.rejoinGame();
+              socketService.resetTournament();
+            }}
+            onCreateRoom={handleCreateRoom}
+            onOpenJoinModal={() => setShowJoinRoomModal(true)}
             onLeaveGame={handleLeaveGame}
           />
         )}
@@ -493,16 +559,21 @@ export default function App() {
         </footer>
       )}
 
+      {/* Join Room by Code Modal */}
+      <JoinRoomModal
+        isOpen={showJoinRoomModal}
+        onClose={() => setShowJoinRoomModal(false)}
+        onJoinRoom={handleSwitchRoom}
+      />
+
       {/* Player Join Name Modal */}
       <JoinModal
-        isOpen={showJoinModal && !hasJoined}
+        isOpen={showJoinModal && !hasJoined && Boolean(roomId)}
         roomId={roomId}
         onJoined={({ name, avatar }) => {
           setPlayerName(name);
           setPlayerAvatar(avatar);
           setHasJoined(true);
-          setShowJoinModal(false);
-          socketService.joinGame(name, avatar, roomId);
         }}
       />
     </div>

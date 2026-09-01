@@ -12,6 +12,7 @@ export default function LobbyScreen({
   roundDuration = 60,
   currentSocketId = null,
   localIp = 'localhost',
+  myPlayer = null,
   onLeaveGame = null,
   onSwitchRoom = null,
   onCreateRoom = null
@@ -87,6 +88,29 @@ export default function LobbyScreen({
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-3 sm:space-y-4 select-none">
+      {/* Non-host Re-join Confirmation Banner */}
+      {myPlayer?.status === 'waiting_rejoin' && (
+        <div className="p-4 bg-[#1f1708] border-4 border-yellow-400 pixel-card text-center space-y-2 shadow-2xl animate-pulse">
+          <div className="text-3xl">🏆</div>
+          <div className="font-arcade text-base sm:text-lg text-white pixel-text-shadow">
+            การแข่งขันรอบใหม่กำลังจะเริ่ม!
+          </div>
+          <p className="font-ui text-xs sm:text-sm text-yellow-300 font-bold">
+            คุณจบเกมจากรอบที่แล้ว กรุณากดปุ่มด้านล่างเพื่อยืนยันการเข้าร่วมแข่งขันรอบใหม่นี้
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              soundService.playVictory();
+              socketService.rejoinGame();
+            }}
+            className="w-full max-w-sm mx-auto py-3.5 pixel-btn pixel-btn-gold text-black font-arcade text-sm sm:text-base font-extrabold cursor-pointer shadow-xl tracking-wider block"
+          >
+            🎮 กดเข้าห้องใหม่ (RE-JOIN MATCH)
+          </button>
+        </div>
+      )}
+
       {/* Lobby Hero Header */}
       <div className="pixel-card p-4 sm:p-5 text-center bg-[#101322]">
         <div className="inline-block px-3 py-1 bg-amber-400 text-black font-ui text-xs sm:text-sm font-extrabold uppercase mb-2 pixel-border">

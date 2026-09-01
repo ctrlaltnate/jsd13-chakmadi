@@ -31,8 +31,12 @@ socket.on('sync_time_reply', ({ clientSendTime, serverTime }) => {
   serverTimeOffset = (serverTime + latency) - receiveTime;
 });
 
-// Periodic sync every 15s
-setInterval(syncClock, 15000);
+// Store host token automatically when host confirmation is received
+socket.on('join_confirmed', (data) => {
+  if (data?.isHost && data?.hostToken && data?.roomId) {
+    localStorage.setItem(`tug_host_token_${data.roomId}`, data.hostToken);
+  }
+});
 
 export const socketService = {
   socket,
@@ -46,11 +50,34 @@ export const socketService = {
   },
 
   joinGame(name, avatar = 0, roomId = 'MAIN') {
-    socket.emit('join_game', { name, avatar, roomId });
+    const hostToken = localStorage.getItem(`tug_host_token_${roomId}`) || null;
+    socket.emit('join_game', { name, avatar, roomId, hostToken });
+  },
+
+  createRoom(name, avatar = 0, callback) {
+    socket.emit('create_room', { name, avatar }, (res) => {
+      if (res?.hostToken && res?.roomId) {
+        localStorage.setItem(`tug_host_token_${res.roomId}`, res.hostToken);
+      }
+      if (typeof callback === 'function') {
+        callback(res);
+      }
+    });
+  },
+
+  rejoinGame() {
+    socket.emit('rejoin_game');
   },
 
   switchRoom(roomId) {
+    const hostToken = localStorage.getItem(`tug_host_token_${roomId}`) || null;
     socket.emit('switch_room', roomId);
+    socket.emit('join_game', {
+      name: localStorage.getItem('tug_player_name') || 'Fighter',
+      avatar: parseInt(localStorage.getItem('tug_player_avatar') || '0', 10),
+      roomId,
+      hostToken
+    });
   },
 
   updateName(name) {

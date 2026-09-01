@@ -100,13 +100,43 @@ export default function ChampionScreen({
               soundService.playVictory();
               socketService.resetTournament();
             }}
-            className="w-full py-3.5 sm:py-4 pixel-btn pixel-btn-gold text-black text-sm sm:text-base font-arcade font-extrabold cursor-pointer tracking-wider"
+            className="w-full py-3.5 sm:py-4 pixel-btn pixel-btn-gold text-black text-sm sm:text-base font-arcade font-extrabold cursor-pointer tracking-wider shadow-lg"
           >
-            🔄 กลับสู่ล็อบบี้ / แข่งรอบใหม่ (NEW TOURNAMENT)
+            🔄 เริ่มทัวร์นาเมนต์ใหม่ / กลับล็อบบี้ (NEW TOURNAMENT)
           </button>
         ) : (
-          <div className="p-3 bg-gray-900 font-ui text-sm text-yellow-300 font-bold">
-            กำลังรอให้โฮสต์เริ่มทัวร์นาเมนต์ใหม่...
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                soundService.playVictory();
+                if (onRejoinGame) onRejoinGame();
+              }}
+              className="w-full py-3.5 sm:py-4 pixel-btn pixel-btn-gold text-black text-sm sm:text-base font-arcade font-extrabold cursor-pointer tracking-wider shadow-lg"
+            >
+              🎮 กดเข้าห้องใหม่ (RE-JOIN NEW GAME)
+            </button>
+
+            <div className="flex flex-wrap gap-2 justify-center">
+              {onCreateRoom && (
+                <button
+                  type="button"
+                  onClick={onCreateRoom}
+                  className="flex-1 min-w-[140px] py-2 px-3 pixel-btn pixel-btn-blue text-white text-xs font-ui font-extrabold cursor-pointer"
+                >
+                  ➕ สร้างห้องของตัวเอง
+                </button>
+              )}
+              {onOpenJoinModal && (
+                <button
+                  type="button"
+                  onClick={onOpenJoinModal}
+                  className="flex-1 min-w-[140px] py-2 px-3 pixel-btn bg-purple-700 hover:bg-purple-600 text-white text-xs font-ui font-extrabold cursor-pointer"
+                >
+                  🔑 เข้าห้องอื่น
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -114,7 +144,7 @@ export default function ChampionScreen({
           <button
             type="button"
             onClick={onLeaveGame}
-            className="px-4 py-2 pixel-btn pixel-btn-red text-white text-xs font-ui font-extrabold cursor-pointer"
+            className="px-4 py-2 pixel-btn pixel-btn-red text-white text-xs font-ui font-extrabold cursor-pointer mt-1"
           >
             🚪 ออกจากเกม (LEAVE GAME)
           </button>
