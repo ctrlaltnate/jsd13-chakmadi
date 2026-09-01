@@ -1,0 +1,12 @@
+{
+  "name": "crowd-tug-of-war",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "server": "node server/index.js",
+    "client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "dev": "node run.js"
+  }
+}
