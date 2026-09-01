@@ -5,12 +5,30 @@ import { soundService } from '../services/sound';
 export default function PullController({
   playerStatus = 'active', // 'active' | 'eliminated' | 'spectator'
   playerTeam = 'red', // 'red' | 'blue' | null
-  roundActive = false
+  roundActive = false,
+  myRoundPulls = 0,
+  myTotalPulls = 0
 }) {
   const [isPressed, setIsPressed] = useState(false);
   const [btnShake, setBtnShake] = useState(false);
   const [popups, setPopups] = useState([]);
   const [combo, setCombo] = useState(0);
+  const [localPulls, setLocalPulls] = useState(0);
+
+  // Sync local optimistic pulls with server authoritative state
+  useEffect(() => {
+    if (myRoundPulls > localPulls) {
+      setLocalPulls(myRoundPulls);
+    }
+  }, [myRoundPulls, localPulls]);
+
+  // Reset local pulls when round transitions
+  useEffect(() => {
+    if (!roundActive) {
+      setLocalPulls(0);
+      setCombo(0);
+    }
+  }, [roundActive]);
 
   // Guard against holding down (No Hold-to-Pull!)
   const isPointerDownRef = useRef(false);
@@ -21,6 +39,9 @@ export default function PullController({
     if (!roundActive || playerStatus !== 'active') {
       return;
     }
+
+    // Instant optimistic counter increment (0ms response)
+    setLocalPulls((prev) => prev + 1);
 
     // Button visual press and local button shake (screen does NOT shake)
     setIsPressed(true);
@@ -74,22 +95,14 @@ export default function PullController({
     isPointerDownRef.current = false;
   };
 
-  // Keyboard Spacebar Listener (Strictly rejects holding / e.repeat)
+  // Global Spacebar listener (strictly single-tap, no hold)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Don't intercept if user is typing in an input
-      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
-        return;
-      }
-
       if (e.code === 'Space' || e.key === ' ') {
         e.preventDefault();
-
-        // STRICT NO-HOLD: Reject auto-repeated keydown events
         if (e.repeat || isSpaceDownRef.current) {
           return;
         }
-
         isSpaceDownRef.current = true;
         executePull();
       }
@@ -97,11 +110,11 @@ export default function PullController({
 
     const handleKeyUp = (e) => {
       if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
         isSpaceDownRef.current = false;
       }
     };
 
-    // Global pointer up listener to reset pointer state even if released outside button
     const handleWindowPointerUp = () => {
       isPointerDownRef.current = false;
     };
@@ -160,20 +173,28 @@ export default function PullController({
 
   // Active Player PULL Controller
   const teamColorText = playerTeam === 'red' ? 'text-red-400' : 'text-blue-400';
+  const displayPulls = Math.max(localPulls, myRoundPulls);
 
   return (
     <div className="w-full max-w-md mx-auto flex flex-col items-center justify-center py-1 px-1 select-none shrink-0">
-      {/* Combo / Rhythm Indicator */}
-      <div className="h-5 mb-0.5 text-center font-ui text-xs sm:text-sm font-extrabold">
-        {combo >= 3 ? (
-          <span className="text-yellow-300 animate-pulse pixel-text-shadow">
-            ⚡ COMBO x{combo}! รัวนิ้วเร็วเต็มพิกัด!
+      {/* Real-Time Personal Pull Score & Combo Badge */}
+      <div className="flex items-center justify-between w-full max-w-xs sm:max-w-sm px-1.5 mb-1">
+        <div className="font-ui text-xs sm:text-sm text-yellow-300 font-extrabold flex items-center gap-1">
+          <span>💪</span>
+          <span>แต้มคุณ:</span>
+          <span className="font-arcade text-sm sm:text-base text-white px-1.5 py-0.5 bg-[#0a0d18] border border-yellow-400 shadow-sm animate-pulse">
+            {displayPulls}
           </span>
-        ) : (
-          <span className="text-white">
-            กด <strong className="text-yellow-400 font-arcade">[SPACE]</strong> หรือ <strong className="text-yellow-400 font-arcade">แตะปุ่ม</strong> (ห้ามกดค้าง)
-          </span>
-        )}
+          <span className="text-[10px] text-gray-400">ครั้ง</span>
+        </div>
+
+        <div className="font-ui text-xs font-bold">
+          {combo >= 3 ? (
+            <span className="text-amber-400 animate-pulse">⚡ COMBO x{combo}!</span>
+          ) : (
+            <span className="text-emerald-400">🔥 ดึงรัวๆ</span>
+          )}
+        </div>
       </div>
 
       {/* Giant Pull Button Container */}

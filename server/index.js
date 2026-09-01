@@ -304,7 +304,8 @@ class Room {
       success: true,
       combo: player.combo,
       team: player.team,
-      roundPulls: player.roundPulls
+      roundPulls: player.roundPulls,
+      totalPulls: player.totalPulls
     };
   }
 }
@@ -362,6 +363,14 @@ setInterval(() => {
         continue;
       }
 
+      // Real-time individual player pull tracking
+      const playerPulls = {};
+      for (const p of Object.values(room.players)) {
+        if (p.status === 'active') {
+          playerPulls[p.id] = { roundPulls: p.roundPulls, totalPulls: p.totalPulls };
+        }
+      }
+
       // High-frequency volatile sync to players in this room only
       io.to(room.id).volatile.emit('physics_tick', {
         ropePos: room.ropePos,
@@ -371,6 +380,7 @@ setInterval(() => {
         teamBluePulls: room.teamBluePulls,
         teamRedCount: counts.actualRed,
         teamBlueCount: counts.actualBlue,
+        playerPulls,
         serverTime: now
       });
     }

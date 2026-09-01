@@ -103,16 +103,28 @@ export default function App() {
     });
 
     socket.on('physics_tick', (tick) => {
-      setGameState((prev) => ({
-        ...prev,
-        ropePos: tick.ropePos,
-        teamRedScore: tick.teamRedScore,
-        teamBlueScore: tick.teamBlueScore,
-        teamRedPulls: tick.teamRedPulls,
-        teamBluePulls: tick.teamBluePulls,
-        teamRedCount: tick.teamRedCount ?? prev.teamRedCount,
-        teamBlueCount: tick.teamBlueCount ?? prev.teamBlueCount
-      }));
+      setGameState((prev) => {
+        const updatedPlayers = tick.playerPulls
+          ? prev.players.map((p) => {
+              const pulls = tick.playerPulls[p.id];
+              return pulls
+                ? { ...p, roundPulls: pulls.roundPulls, totalPulls: pulls.totalPulls }
+                : p;
+            })
+          : prev.players;
+
+        return {
+          ...prev,
+          ropePos: tick.ropePos,
+          teamRedScore: tick.teamRedScore,
+          teamBlueScore: tick.teamBlueScore,
+          teamRedPulls: tick.teamRedPulls,
+          teamBluePulls: tick.teamBluePulls,
+          teamRedCount: tick.teamRedCount ?? prev.teamRedCount,
+          teamBlueCount: tick.teamBlueCount ?? prev.teamBlueCount,
+          players: updatedPlayers
+        };
+      });
     });
 
     socket.on('join_confirmed', ({ player }) => {
@@ -434,6 +446,8 @@ export default function App() {
                 playerStatus={myPlayer?.status || 'spectator'}
                 playerTeam={myPlayer?.team}
                 roundActive={true}
+                myRoundPulls={myPlayer?.roundPulls || 0}
+                myTotalPulls={myPlayer?.totalPulls || 0}
               />
             </div>
 

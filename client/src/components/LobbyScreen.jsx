@@ -298,44 +298,46 @@ export default function LobbyScreen({
           </div>
         </div>
 
-        {/* Bot Simulation Injector */}
-        <div className="mb-4 p-3 bg-[#080b14] border-2 border-gray-800">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="font-ui text-xs sm:text-sm text-yellow-300 font-extrabold">
-              🤖 เพิ่มบอทจำลองผู้เล่น (สำหรับทดสอบชักเย่อคนหมู่มาก 50+ คน):
-            </span>
+        {/* Bot Simulation Injector (Visible only for Room Host) */}
+        {isHost && (
+          <div className="mb-4 p-3 bg-[#080b14] border-2 border-gray-800">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="font-ui text-xs sm:text-sm text-yellow-300 font-extrabold">
+                🤖 เพิ่มบอทจำลองผู้เล่น (สำหรับทดสอบชักเย่อคนหมู่มาก 50+ คน):
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => socketService.addBots(5)}
+                className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
+              >
+                +5 บอท
+              </button>
+              <button
+                type="button"
+                onClick={() => socketService.addBots(10)}
+                className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
+              >
+                +10 บอท
+              </button>
+              <button
+                type="button"
+                onClick={() => socketService.addBots(20)}
+                className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
+              >
+                +20 บอท
+              </button>
+              <button
+                type="button"
+                onClick={() => socketService.clearBots()}
+                className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-red text-white cursor-pointer"
+              >
+                ล้างบอททั้งหมด
+              </button>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => socketService.addBots(5)}
-              className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
-            >
-              +5 บอท
-            </button>
-            <button
-              type="button"
-              onClick={() => socketService.addBots(10)}
-              className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
-            >
-              +10 บอท
-            </button>
-            <button
-              type="button"
-              onClick={() => socketService.addBots(20)}
-              className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
-            >
-              +20 บอท
-            </button>
-            <button
-              type="button"
-              onClick={() => socketService.clearBots()}
-              className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-red text-white cursor-pointer"
-            >
-              ล้างบอททั้งหมด
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Start Tournament Button */}
         {isHost ? (
