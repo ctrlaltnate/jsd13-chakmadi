@@ -423,7 +423,7 @@ io.on('connection', (socket) => {
       mainRoom.hostSocketId = socket.id;
       mainRoom.hostName = sanitizedName;
       isHost = true;
-    } else if (!mainRoom.hostSocketId && !mainRoom.hostName) {
+    } else if (!mainRoom.hostSocketId) {
       mainRoom.hostSocketId = socket.id;
       mainRoom.hostName = sanitizedName;
       isHost = true;
@@ -611,6 +611,7 @@ io.on('connection', (socket) => {
     delete mainRoom.players[socket.id];
     if (mainRoom.hostSocketId === socket.id) {
       mainRoom.hostSocketId = null;
+      mainRoom.hostName = null;
     }
     mainRoom.broadcastState();
   });
@@ -620,6 +621,7 @@ io.on('connection', (socket) => {
     delete mainRoom.players[socket.id];
     if (mainRoom.hostSocketId === socket.id) {
       mainRoom.hostSocketId = null;
+      mainRoom.hostName = null;
     }
     mainRoom.broadcastState();
   });

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { soundService } from '../services/sound';
 import badgeImg from '../assets/badge.png';
 
-const AVATARS_ICON = ['🥊', '⚔️', '🥷', '🧙‍♂️', '🤖', '🏴‍☠️'];
+const AVATARS_ICON = ['🥊', '💁‍♀️', '🐒', '🧙‍♂️', '🤖', '🦙'];
 
 export default function RoundSummaryScreen({
   roundNumber = 1,

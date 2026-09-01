@@ -193,7 +193,7 @@ export default function TeamRosters({
                   >
                     <div className="flex items-center gap-1.5 truncate mr-2">
                       <span className="text-base">
-                        {AVATARS_ICON[p.avatar] || '⚔️'}
+                        {AVATARS_ICON[p.avatar] || '🥊'}
                       </span>
                       <span
                         className={`font-ui text-sm truncate font-bold ${isMe ? 'text-yellow-300' : 'text-white'

@@ -40,7 +40,7 @@ socket1.on('connect', () => {
 socket1.on('game_state', async (state) => {
   if (stage === 'INIT' && state.status === 'LOBBY') {
     stage = 'JOINING';
-    socket1.emit('join_game', { name: 'AlphaPlayer', avatar: 1 });
+    socket1.emit('join_game', { name: 'AlphaPlayer', avatar: 1, hostToken: state.hostToken });
   }
 
   if (stage === 'JOINED_ALPHA') {
