@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { socketService } from '../services/socket';
 import { soundService } from '../services/sound';
 
-const AVATARS_ICON = ['🥊', '⚔️', '🥷', '🧙‍♂️', '🤖', '🏴‍☠️'];
+const AVATARS_ICON = ['🥊', '💁‍♀️', '🐒', '🧙‍♂️', '🤖', '🦙'];
 
 export default function LobbyScreen({
   players = [],

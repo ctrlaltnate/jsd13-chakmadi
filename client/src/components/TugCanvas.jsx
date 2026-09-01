@@ -5,12 +5,16 @@ export default function TugCanvas({
   teamRedCount = 1,
   teamBlueCount = 1,
   winnerTeam = null,
-  cheerParticles = []
+  cheerParticles = [],
+  onPullClick = null,
+  playerTeam = null,
+  isInteractive = false
 }) {
   const canvasRef = useRef(null);
   const animFrameRef = useRef(null);
   const targetRopePosRef = useRef(ropePos);
   const currentRopePosRef = useRef(ropePos);
+  const clickRipplesRef = useRef([]);
 
   useEffect(() => {
     targetRopePosRef.current = ropePos;
@@ -185,6 +189,29 @@ export default function TugCanvas({
         });
       }
 
+      // 10. Expanding Click/Tap Ripples & Floating Feedback
+      if (clickRipplesRef.current.length > 0) {
+        clickRipplesRef.current.forEach((r) => {
+          r.radius += 3.2;
+          r.opacity -= 0.05;
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+          ctx.strokeStyle = r.team === 'red' ? '#ef4444' : r.team === 'blue' ? '#38bdf8' : '#fbbf24';
+          ctx.lineWidth = 3.5;
+          ctx.globalAlpha = Math.max(0, r.opacity);
+          ctx.stroke();
+
+          // Floating text effect
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 11px "Press Start 2P", monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('⚡+1 PULL!', r.x, r.y - r.radius - 4);
+          ctx.restore();
+        });
+        clickRipplesRef.current = clickRipplesRef.current.filter((r) => r.opacity > 0);
+      }
+
       animFrameRef.current = requestAnimationFrame(render);
     };
 
@@ -279,21 +306,59 @@ export default function TugCanvas({
     ctx.restore();
   }
 
+  // Handle interactive clicks or taps anywhere on the canvas arena
+  const handlePointerDown = (e) => {
+    if (!isInteractive || !onPullClick) return;
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+
+      clickRipplesRef.current.push({
+        x,
+        y,
+        radius: 8,
+        opacity: 1.0,
+        team: playerTeam
+      });
+    }
+    onPullClick();
+  };
+
   return (
-    <div className="relative w-full overflow-hidden border-2 sm:border-3 border-[#3b4261] bg-[#0c0e17] pixel-card shrink-0">
+    <div
+      onPointerDown={handlePointerDown}
+      className={`relative w-full overflow-hidden border-2 sm:border-3 border-[#3b4261] bg-[#0c0e17] pixel-card shrink-0 select-none touch-none ${
+        isInteractive ? 'cursor-pointer active:scale-[0.995] transition-transform' : ''
+      }`}
+    >
       <canvas
         ref={canvasRef}
         width={800}
         height={260}
-        className="w-full h-[115px] xs:h-[130px] sm:h-[160px] md:h-[190px] block"
+        className="w-full h-[115px] xs:h-[130px] sm:h-[160px] md:h-[180px] block touch-none"
       />
       {/* Direction Indicators */}
-      <div className="absolute top-1.5 left-2 flex items-center gap-1 font-pixel text-[9px] sm:text-xs text-red-400 bg-black/70 px-1.5 py-0.5 border border-red-500/50">
+      <div className="absolute top-1.5 left-2 flex items-center gap-1 font-pixel text-[9px] sm:text-xs text-red-400 bg-black/70 px-1.5 py-0.5 border border-red-500/50 pointer-events-none">
         <span>◀ RED</span>
       </div>
-      <div className="absolute top-1.5 right-2 flex items-center gap-1 font-pixel text-[9px] sm:text-xs text-blue-400 bg-black/70 px-1.5 py-0.5 border border-blue-500/50">
+      <div className="absolute top-1.5 right-2 flex items-center gap-1 font-pixel text-[9px] sm:text-xs text-blue-400 bg-black/70 px-1.5 py-0.5 border border-blue-500/50 pointer-events-none">
         <span>BLUE ▶</span>
       </div>
+
+      {/* Arena Click Hint Badge */}
+      {isInteractive && (
+        <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 bg-black/80 px-2 py-0.5 border border-yellow-500/60 font-ui text-[10px] sm:text-xs text-yellow-300 font-bold pointer-events-none animate-pulse">
+          👆 แตะหรือคลิกที่สนามเพื่อดึงได้เช่นกัน!
+        </div>
+      )}
     </div>
   );
 }

@@ -1,17 +1,16 @@
 import React, { useState } from 'react';
 
-const AVATARS_ICON = ['🥊', '⚔️', '🥷', '🧙‍♂️', '🤖', '🏴‍☠️'];
+const AVATARS_ICON = ['🥊', '💁‍♀️', '🐒', '🧙‍♂️', '🤖', '🦙'];
 
 // Single-team panel used for desktop left/right sidebar columns
 export function TeamPanel({ team = 'red', players = [], currentSocketId = null, className = '' }) {
   const isRed = team === 'red';
-  const teamPlayers = players.filter((p) => p.team === team);
+  const teamPlayers = players.filter((p) => p.team === team && p.status === 'active');
 
   return (
     <div
-      className={`p-3 flex flex-col h-full min-h-[380px] max-h-[580px] ${
-        isRed ? 'pixel-card-red' : 'pixel-card-blue'
-      } ${className}`}
+      className={`p-3 flex flex-col h-full min-h-[380px] max-h-[580px] ${isRed ? 'pixel-card-red' : 'pixel-card-blue'
+        } ${className}`}
     >
       <div className={`flex items-center justify-between border-b-2 pb-2 mb-2 ${isRed ? 'border-red-800/80' : 'border-blue-800/80'}`}>
         <div className="flex items-center gap-1.5">
@@ -35,22 +34,20 @@ export function TeamPanel({ team = 'red', players = [], currentSocketId = null, 
             return (
               <div
                 key={p.id}
-                className={`flex items-center justify-between px-2.5 py-1.5 text-xs border ${
-                  isMe
+                className={`flex items-center justify-between px-2.5 py-1.5 text-xs border ${isMe
                     ? 'border-yellow-400 bg-yellow-950/80 shadow-[0_0_8px_rgba(250,204,21,0.6)]'
                     : isRed
-                    ? 'border-red-900/80 bg-red-950/40'
-                    : 'border-blue-900/80 bg-blue-950/40'
-                }`}
+                      ? 'border-red-900/80 bg-red-950/40'
+                      : 'border-blue-900/80 bg-blue-950/40'
+                  }`}
               >
                 <div className="flex items-center gap-2 truncate mr-2">
                   <span className="text-base sm:text-lg">
                     {AVATARS_ICON[p.avatar] || '🥊'}
                   </span>
                   <span
-                    className={`font-ui text-sm truncate font-bold ${
-                      isMe ? 'text-yellow-300' : 'text-white'
-                    }`}
+                    className={`font-ui text-sm truncate font-bold ${isMe ? 'text-yellow-300' : 'text-white'
+                      }`}
                   >
                     {p.name} {isMe && '★ (คุณ)'}
                   </span>
@@ -79,8 +76,8 @@ export default function TeamRosters({
 }) {
   const [activeTab, setActiveTab] = useState('all');
 
-  const redTeam = players.filter((p) => p.team === 'red');
-  const blueTeam = players.filter((p) => p.team === 'blue');
+  const redTeam = players.filter((p) => p.team === 'red' && p.status === 'active');
+  const blueTeam = players.filter((p) => p.team === 'blue' && p.status === 'active');
 
   return (
     <div className="my-2">
@@ -112,9 +109,8 @@ export default function TeamRosters({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
         {/* TEAM RED PANEL */}
         <div
-          className={`pixel-card-red p-2.5 sm:p-3 flex flex-col h-36 sm:h-48 ${
-            activeTab === 'blue' ? 'hidden sm:flex' : 'flex'
-          }`}
+          className={`pixel-card-red p-2.5 sm:p-3 flex flex-col h-36 sm:h-48 ${activeTab === 'blue' ? 'hidden sm:flex' : 'flex'
+            }`}
         >
           <div className="flex items-center justify-between border-b-2 border-red-800/80 pb-1 mb-1.5">
             <div className="flex items-center gap-1.5">
@@ -135,20 +131,18 @@ export default function TeamRosters({
                 return (
                   <div
                     key={p.id}
-                    className={`flex items-center justify-between px-2 py-1 text-xs border ${
-                      isMe
+                    className={`flex items-center justify-between px-2 py-1 text-xs border ${isMe
                         ? 'border-yellow-400 bg-yellow-950/80 shadow-[0_0_8px_rgba(250,204,21,0.6)]'
                         : 'border-red-900/80 bg-red-950/40'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-1.5 truncate mr-2">
                       <span className="text-base">
                         {AVATARS_ICON[p.avatar] || '🥊'}
                       </span>
                       <span
-                        className={`font-ui text-sm truncate font-bold ${
-                          isMe ? 'text-yellow-300' : 'text-white'
-                        }`}
+                        className={`font-ui text-sm truncate font-bold ${isMe ? 'text-yellow-300' : 'text-white'
+                          }`}
                       >
                         {p.name} {isMe && '★ (คุณ)'}
                       </span>
@@ -170,9 +164,8 @@ export default function TeamRosters({
 
         {/* TEAM BLUE PANEL */}
         <div
-          className={`pixel-card-blue p-2.5 sm:p-3 flex flex-col h-36 sm:h-48 ${
-            activeTab === 'red' ? 'hidden sm:flex' : 'flex'
-          }`}
+          className={`pixel-card-blue p-2.5 sm:p-3 flex flex-col h-36 sm:h-48 ${activeTab === 'red' ? 'hidden sm:flex' : 'flex'
+            }`}
         >
           <div className="flex items-center justify-between border-b-2 border-blue-800/80 pb-1 mb-1.5">
             <div className="flex items-center gap-1.5">
@@ -193,20 +186,18 @@ export default function TeamRosters({
                 return (
                   <div
                     key={p.id}
-                    className={`flex items-center justify-between px-2 py-1 text-xs border ${
-                      isMe
+                    className={`flex items-center justify-between px-2 py-1 text-xs border ${isMe
                         ? 'border-yellow-400 bg-yellow-950/80 shadow-[0_0_8px_rgba(250,204,21,0.6)]'
                         : 'border-blue-900/80 bg-blue-950/40'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-1.5 truncate mr-2">
                       <span className="text-base">
                         {AVATARS_ICON[p.avatar] || '⚔️'}
                       </span>
                       <span
-                        className={`font-ui text-sm truncate font-bold ${
-                          isMe ? 'text-yellow-300' : 'text-white'
-                        }`}
+                        className={`font-ui text-sm truncate font-bold ${isMe ? 'text-yellow-300' : 'text-white'
+                          }`}
                       >
                         {p.name} {isMe && '★ (คุณ)'}
                       </span>

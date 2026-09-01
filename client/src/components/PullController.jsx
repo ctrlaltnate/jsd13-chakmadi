@@ -7,7 +7,8 @@ export default function PullController({
   playerTeam = 'red', // 'red' | 'blue' | null
   roundActive = false,
   myRoundPulls = 0,
-  myTotalPulls = 0
+  myTotalPulls = 0,
+  pullTriggerRef = null
 }) {
   const [isPressed, setIsPressed] = useState(false);
   const [btnShake, setBtnShake] = useState(false);
@@ -112,6 +113,18 @@ export default function PullController({
       flushTimerRef.current = setTimeout(flushPulls, 50);
     }
   }, [roundActive, playerStatus, flushPulls]);
+
+  // Expose executePull to external callers (e.g. TugCanvas clicks/taps)
+  useEffect(() => {
+    if (pullTriggerRef) {
+      pullTriggerRef.current = executePull;
+    }
+    return () => {
+      if (pullTriggerRef) {
+        pullTriggerRef.current = null;
+      }
+    };
+  }, [pullTriggerRef, executePull]);
 
   // Pointer Down (Click / Tap) - Requires releasing and blocked if Spacebar is pressed
   const handlePointerDown = (e) => {
@@ -256,7 +269,7 @@ export default function PullController({
           onPointerLeave={handlePointerUp}
           onPointerCancel={handlePointerUp}
           disabled={!roundActive}
-          className={`w-full max-w-xs sm:max-w-sm h-20 xs:h-24 sm:h-28 pixel-pull-btn text-xl sm:text-2xl font-arcade flex flex-col items-center justify-center gap-0.5 ${
+          className={`w-full max-w-xs sm:max-w-sm h-16 xs:h-20 sm:h-24 pixel-pull-btn text-lg sm:text-2xl font-arcade flex flex-col items-center justify-center gap-0.5 ${
             isPressed ? 'pressed' : ''
           } ${btnShake ? 'btn-shake' : ''} ${!roundActive ? 'opacity-50 cursor-not-allowed grayscale' : 'cursor-pointer'}`}
         >
@@ -266,16 +279,16 @@ export default function PullController({
             <span>💥</span>
           </div>
           <span className="text-[11px] sm:text-xs font-ui text-yellow-200 font-extrabold uppercase tracking-wide">
-            {roundActive ? `กด SPACE หรือ แตะรัวๆ (ทีม ${playerTeam?.toUpperCase()})` : 'รอสัญญาณเริ่ม'}
+            {roundActive ? `กด SPACE / แตะปุ่ม หรือคลิกที่สนาม` : 'รอสัญญาณเริ่ม'}
           </span>
         </button>
       </div>
 
       {/* Controls Hint & Anti-Hold Rule */}
-      <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5 font-ui text-[11px] sm:text-xs font-bold text-white text-center">
+      <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5 font-ui text-[10px] sm:text-xs font-bold text-white text-center">
         <span>ทีม: <strong className={`${teamColorText} font-extrabold`}>{playerTeam ? `TEAM ${playerTeam.toUpperCase()}` : 'กำลังสุ่มทีม...'}</strong></span>
         <span>•</span>
-        <span className="text-yellow-300">⌨️ Space หรือ คลิก (กดพร้อมกันนับทีเดียว)</span>
+        <span className="text-yellow-300">🎮 คลิกที่ปุ่ม หรือแตะที่สนามเพื่อดึง</span>
         <span>•</span>
         <span className="text-red-300 font-extrabold">🚫 ห้ามกดค้าง</span>
       </div>

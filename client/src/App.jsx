@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { socketService } from './services/socket';
 import { soundService } from './services/sound';
 import JoinModal from './components/JoinModal';
@@ -12,7 +12,7 @@ import RoundSummaryScreen from './components/RoundSummaryScreen';
 import ChampionScreen from './components/ChampionScreen';
 import SettingsModal from './components/SettingsModal';
 
-const AVATARS_ICON = ['🥊', '⚔️', '🥷', '🧙‍♂️', '🤖', '🏴‍☠️'];
+const AVATARS_ICON = ['🥊', '💁‍♀️', '🐒', '🧙‍♂️', '🤖', '🦙'];
 
 export default function App() {
   const [gameState, setGameState] = useState({
@@ -50,6 +50,25 @@ export default function App() {
   const [cheerParticles, setCheerParticles] = useState([]);
   const [copiedLink, setCopiedLink] = useState(false);
   const [dismissChampion, setDismissChampion] = useState(false);
+  const pullTriggerRef = useRef(null);
+
+  // Lock mobile scrolling, touch-action, and overscroll during active gameplay
+  useEffect(() => {
+    if (gameState.status === 'ROUND_ACTIVE') {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      document.body.style.overscrollBehavior = 'none';
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+      document.body.style.overscrollBehavior = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+      document.body.style.overscrollBehavior = '';
+    };
+  }, [gameState.status]);
 
   // Copy Game Invite Link
   const handleCopyInviteLink = () => {
@@ -246,7 +265,7 @@ export default function App() {
       </header>
 
       {/* Main Content Area */}
-      <main className={`flex-1 max-w-6xl w-full mx-auto p-1 sm:p-2.5 flex flex-col ${gameState.status === 'ROUND_ACTIVE' ? 'justify-between overflow-hidden' : 'justify-center'}`}>
+      <main className={`flex-1 max-w-6xl w-full mx-auto p-1 sm:p-2.5 flex flex-col ${gameState.status === 'ROUND_ACTIVE' ? 'justify-between overflow-hidden h-[calc(100dvh-48px)] max-h-[calc(100dvh-48px)] select-none touch-none overscroll-none' : 'justify-center'}`}>
         {/* LOBBY STATE (or when ChampionScreen was dismissed by non-host) */}
         {(gameState.status === 'LOBBY' || (gameState.status === 'CHAMPIONSHIP' && dismissChampion)) && (
           <LobbyScreen
@@ -270,15 +289,15 @@ export default function App() {
               teamBlueScore={0}
               teamRedPulls={0}
               teamBluePulls={0}
-              teamRedCount={gameState.players.filter((p) => p.team === 'red').length}
-              teamBlueCount={gameState.players.filter((p) => p.team === 'blue').length}
+              teamRedCount={gameState.players.filter((p) => p.team === 'red' && p.status === 'active').length}
+              teamBlueCount={gameState.players.filter((p) => p.team === 'blue' && p.status === 'active').length}
               ropePos={0}
               status="ROUND_STARTING"
             />
             <TugCanvas
               ropePos={0}
-              teamRedCount={gameState.players.filter((p) => p.team === 'red').length}
-              teamBlueCount={gameState.players.filter((p) => p.team === 'blue').length}
+              teamRedCount={gameState.players.filter((p) => p.team === 'red' && p.status === 'active').length}
+              teamBlueCount={gameState.players.filter((p) => p.team === 'blue' && p.status === 'active').length}
               winnerTeam={null}
               cheerParticles={cheerParticles}
             />
@@ -291,7 +310,7 @@ export default function App() {
 
         {/* ROUND ACTIVE STATE - 3-Column layout on desktop, perfectly fits screen on mobile */}
         {gameState.status === 'ROUND_ACTIVE' && (
-          <div className="w-full flex flex-col lg:flex-row items-stretch justify-center gap-1.5 lg:gap-3 flex-1 overflow-hidden">
+          <div className="w-full flex flex-col lg:flex-row items-stretch justify-center gap-1.5 lg:gap-3 flex-1 overflow-hidden h-full">
             {/* LEFT SIDEBAR: TEAM RED (DESKTOP) */}
             <div className="hidden lg:block w-56 xl:w-64 shrink-0 overflow-y-auto max-h-[82vh]">
               <TeamPanel
@@ -302,7 +321,7 @@ export default function App() {
             </div>
 
             {/* CENTER ARENA: SCOREBOARD, CANVAS & CONTROLLER */}
-            <div className="flex-1 max-w-2xl w-full mx-auto flex flex-col justify-between py-0.5 space-y-1 overflow-hidden">
+            <div className="flex-1 max-w-2xl w-full mx-auto flex flex-col justify-between py-0.5 space-y-1 overflow-hidden h-full">
               {/* 1. Central Scoreboard with dynamic leader highlight */}
               <Scoreboard
                 roundNumber={gameState.roundNumber}
@@ -311,21 +330,24 @@ export default function App() {
                 teamBlueScore={gameState.teamBlueScore}
                 teamRedPulls={gameState.teamRedPulls}
                 teamBluePulls={gameState.teamBluePulls}
-                teamRedCount={gameState.teamRedCount || gameState.players.filter((p) => p.team === 'red').length}
-                teamBlueCount={gameState.teamBlueCount || gameState.players.filter((p) => p.team === 'blue').length}
+                teamRedCount={gameState.teamRedCount || gameState.players.filter((p) => p.team === 'red' && p.status === 'active').length}
+                teamBlueCount={gameState.teamBlueCount || gameState.players.filter((p) => p.team === 'blue' && p.status === 'active').length}
                 ropePos={gameState.ropePos}
                 roundStartTime={gameState.roundStartTime}
                 roundEndTime={gameState.roundEndTime}
                 status="ROUND_ACTIVE"
               />
 
-              {/* 2. Tug Canvas Arena */}
+              {/* 2. Tug Canvas Arena (Interactive: click anywhere on arena to pull!) */}
               <TugCanvas
                 ropePos={gameState.ropePos}
-                teamRedCount={gameState.players.filter((p) => p.team === 'red').length}
-                teamBlueCount={gameState.players.filter((p) => p.team === 'blue').length}
+                teamRedCount={gameState.players.filter((p) => p.team === 'red' && p.status === 'active').length}
+                teamBlueCount={gameState.players.filter((p) => p.team === 'blue' && p.status === 'active').length}
                 winnerTeam={null}
                 cheerParticles={cheerParticles}
+                onPullClick={() => pullTriggerRef.current && pullTriggerRef.current()}
+                playerTeam={myPlayer?.team}
+                isInteractive={myPlayer?.status === 'active'}
               />
 
               {/* 3. Giant Pull Controller with Spacebar & local button shake */}
@@ -335,6 +357,7 @@ export default function App() {
                 roundActive={true}
                 myRoundPulls={myPlayer?.roundPulls || 0}
                 myTotalPulls={myPlayer?.totalPulls || 0}
+                pullTriggerRef={pullTriggerRef}
               />
             </div>
 

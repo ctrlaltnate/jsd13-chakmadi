@@ -4,7 +4,7 @@ import { socketService } from '../services/socket';
 import { soundService } from '../services/sound';
 import badgeImg from '../assets/badge.png';
 
-const AVATARS_ICON = ['🥊', '⚔️', '🥷', '🧙‍♂️', '🤖', '🏴‍☠️'];
+const AVATARS_ICON = ['🥊', '💁‍♀️', '🐒', '🧙‍♂️', '🤖', '🦙'];
 
 export default function ChampionScreen({
   champion = null,

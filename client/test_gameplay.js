@@ -98,5 +98,6 @@ socket1.on('join_confirmed', ({ player }) => {
 
 socket2.on('join_confirmed', ({ player }) => {
   assert(player.name === 'BetaPlayer', 'Second player registered properly');
-  stage = 'READY_FOR_BOTS';
+  stage = 'ADDING_BOTS';
+  socket1.emit('add_bots', 6);
 });

@@ -4,11 +4,11 @@ import { soundService } from '../services/sound';
 
 const AVATARS = [
   { id: 0, name: 'Boxer (นักมวย)', icon: '🥊' },
-  { id: 1, name: 'Warrior (นักรบ)', icon: '⚔️' },
-  { id: 2, name: 'Ninja (นินจา)', icon: '🥷' },
+  { id: 1, name: 'Diva (สาวสวย)', icon: '💁‍♀️' },
+  { id: 2, name: 'Monkey (ลิงจ๋อ)', icon: '🐒' },
   { id: 3, name: 'Wizard (จอมเวทย์)', icon: '🧙‍♂️' },
   { id: 4, name: 'Robot (หุ่นยนต์)', icon: '🤖' },
-  { id: 5, name: 'Pirate (โจรสลัด)', icon: '🏴‍☠️' }
+  { id: 5, name: 'Llama (ลามะ)', icon: '🦙' }
 ];
 
 export default function JoinModal({
