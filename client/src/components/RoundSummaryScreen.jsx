@@ -42,7 +42,7 @@ export default function RoundSummaryScreen({
         <img
           src={badgeImg}
           alt="Winner Trophy Badge"
-          className="w-28 sm:w-36 h-auto drop-shadow-[0_0_15px_rgba(234,179,8,0.6)] animate-pulse"
+          className="w-40 sm:w-52 h-auto object-contain max-w-full drop-shadow-[0_0_15px_rgba(234,179,8,0.6)] animate-pulse"
         />
       </div>
 

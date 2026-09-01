@@ -55,6 +55,14 @@ export const socketService = {
     socket.emit('join_game', { name, avatar, hostToken });
   },
 
+  updateProfile(name, avatar = 0) {
+    socket.emit('update_profile', { name, avatar });
+  },
+
+  setReady(isReady) {
+    socket.emit('set_ready', isReady);
+  },
+
   rejoinGame() {
     socket.emit('rejoin_game');
   },

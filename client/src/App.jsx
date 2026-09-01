@@ -11,6 +11,8 @@ import RoundStartingModal from './components/RoundStartingModal';
 import RoundSummaryScreen from './components/RoundSummaryScreen';
 import ChampionScreen from './components/ChampionScreen';
 
+const AVATARS_ICON = ['🥊', '⚔️', '🥷', '🧙‍♂️', '🤖', '🏴‍☠️'];
+
 export default function App() {
   const [gameState, setGameState] = useState({
     status: 'LOBBY',
@@ -37,15 +39,15 @@ export default function App() {
   const [currentSocketId, setCurrentSocketId] = useState(null);
   const [hasJoined, setHasJoined] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [playerAvatar, setPlayerAvatar] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [bgmActive, setBgmActive] = useState(true);
   const [scanlines, setScanlines] = useState(false);
   const [cheerParticles, setCheerParticles] = useState([]);
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [editNameInput, setEditNameInput] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
+  const [dismissChampion, setDismissChampion] = useState(false);
 
   // Copy Game Invite Link
   const handleCopyInviteLink = () => {
@@ -59,6 +61,13 @@ export default function App() {
     soundService.playCheer();
     setTimeout(() => setCopiedLink(false), 2000);
   };
+
+  // Reset dismissChampion whenever gameState status changes away from CHAMPIONSHIP
+  useEffect(() => {
+    if (gameState.status !== 'CHAMPIONSHIP') {
+      setDismissChampion(false);
+    }
+  }, [gameState.status]);
 
   // Socket event listeners
   useEffect(() => {
@@ -173,23 +182,6 @@ export default function App() {
     }
   };
 
-  // Name edit handlers
-  const handleStartEditName = () => {
-    setEditNameInput(myPlayer?.name || playerName);
-    setIsEditingName(true);
-  };
-
-  const handleSaveEditName = (e) => {
-    if (e) e.preventDefault();
-    const clean = editNameInput.trim();
-    if (clean) {
-      setPlayerName(clean);
-      localStorage.setItem('tug_player_name', clean);
-      socketService.updateName(clean);
-    }
-    setIsEditingName(false);
-  };
-
   // Resolve my player object
   const myPlayer = gameState.players.find((p) => p.id === currentSocketId);
   const isHost = currentSocketId && gameState.hostSocketId === currentSocketId;
@@ -229,46 +221,25 @@ export default function App() {
               <span className="hidden xs:inline">{copiedLink ? 'คัดลอกแล้ว!' : 'แชร์ลิงก์เกม'}</span>
             </button>
 
-            {/* Player Badge & Name Edit */}
+            {/* Player Profile Badge with Avatar and Pencil Edit Button */}
             {myPlayer && (
-              isEditingName ? (
-                <form onSubmit={handleSaveEditName} className="flex items-center gap-1">
-                  <input
-                    type="text"
-                    value={editNameInput}
-                    onChange={(e) => setEditNameInput(e.target.value)}
-                    maxLength={14}
-                    autoFocus
-                    placeholder="ชื่อใหม่..."
-                    className="px-2 py-0.5 bg-[#090c14] border-2 border-yellow-400 text-white font-ui font-extrabold text-xs outline-hidden w-20 sm:w-28 shadow-inner"
-                  />
-                  <button
-                    type="submit"
-                    title="บันทึกชื่อ"
-                    className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white font-ui font-extrabold text-xs pixel-btn cursor-pointer"
-                  >
-                    💾
-                  </button>
-                </form>
-              ) : (
-                <div className="hidden md:flex items-center gap-1 px-2 py-0.5 bg-[#171c2f] border border-gray-600 text-xs font-ui font-extrabold text-white">
-                  <span>⭐</span>
-                  <span className="truncate max-w-[80px] sm:max-w-[110px]">{myPlayer.name}</span>
-                  {myPlayer.team && (
-                    <span className={`px-1 text-[9px] uppercase font-arcade ${myPlayer.team === 'red' ? 'bg-red-700 text-white' : 'bg-blue-700 text-white'}`}>
-                      {myPlayer.team}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleStartEditName}
-                    title="แก้ไขชื่อ"
-                    className="ml-1 text-yellow-400 hover:text-yellow-300 transition-transform cursor-pointer p-0.5"
-                  >
-                    ✏️
-                  </button>
-                </div>
-              )
+              <div className="flex items-center gap-1 px-2 py-0.5 bg-[#171c2f] border border-gray-600 text-xs font-ui font-extrabold text-white">
+                <span className="text-sm">{AVATARS_ICON[myPlayer.avatar] || '🥊'}</span>
+                <span className="truncate max-w-[80px] sm:max-w-[110px]">{myPlayer.name}</span>
+                {myPlayer.team && (
+                  <span className={`px-1 text-[9px] uppercase font-arcade ${myPlayer.team === 'red' ? 'bg-red-700 text-white' : 'bg-blue-700 text-white'}`}>
+                    {myPlayer.team}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(true)}
+                  title="แก้ไขชื่อและเปลี่ยนอวาตาร์ตัวละคร"
+                  className="ml-1 text-yellow-400 hover:text-yellow-300 transition-transform cursor-pointer p-0.5 hover:scale-120"
+                >
+                  ✏️
+                </button>
+              </div>
             )}
 
             {/* CRT Toggle */}
@@ -318,8 +289,8 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className={`flex-1 max-w-6xl w-full mx-auto p-1 sm:p-2.5 flex flex-col ${gameState.status === 'ROUND_ACTIVE' ? 'justify-between overflow-hidden' : 'justify-center'}`}>
-        {/* LOBBY STATE */}
-        {gameState.status === 'LOBBY' && (
+        {/* LOBBY STATE (or when ChampionScreen was dismissed by non-host) */}
+        {(gameState.status === 'LOBBY' || (gameState.status === 'CHAMPIONSHIP' && dismissChampion)) && (
           <LobbyScreen
             players={gameState.players}
             isHost={isHost}
@@ -433,7 +404,7 @@ export default function App() {
         )}
 
         {/* CHAMPIONSHIP SHOWDOWN / TROPHY */}
-        {gameState.status === 'CHAMPIONSHIP' && (
+        {gameState.status === 'CHAMPIONSHIP' && !dismissChampion && (
           <ChampionScreen
             champion={gameState.champion}
             players={gameState.players}
@@ -441,6 +412,9 @@ export default function App() {
             currentSocketId={currentSocketId}
             onRejoinGame={() => {
               socketService.rejoinGame();
+            }}
+            onReturnToLobby={() => {
+              setDismissChampion(true);
             }}
             onLeaveGame={handleLeaveGame}
           />
@@ -454,13 +428,31 @@ export default function App() {
         </footer>
       )}
 
-      {/* Player Join Name Modal */}
+      {/* Initial Player Join Modal */}
       <JoinModal
         isOpen={showJoinModal && !hasJoined}
+        initialName={playerName}
+        initialAvatar={playerAvatar}
+        isEditing={false}
         onJoined={({ name, avatar }) => {
           setPlayerName(name);
           setPlayerAvatar(avatar);
           setHasJoined(true);
+          setShowJoinModal(false);
+        }}
+      />
+
+      {/* Edit Profile Modal (Opened via pencil button) */}
+      <JoinModal
+        isOpen={showProfileModal}
+        initialName={myPlayer?.name || playerName}
+        initialAvatar={myPlayer?.avatar ?? playerAvatar}
+        isEditing={true}
+        onClose={() => setShowProfileModal(false)}
+        onJoined={({ name, avatar }) => {
+          setPlayerName(name);
+          setPlayerAvatar(avatar);
+          setShowProfileModal(false);
         }}
       />
     </div>

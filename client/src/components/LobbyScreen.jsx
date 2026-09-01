@@ -18,7 +18,7 @@ export default function LobbyScreen({
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [showEnlargeQr, setShowEnlargeQr] = useState(false);
 
-  // Direct game URL: everyone goes directly to this unified game room
+  // Direct game URL: everyone connects to the single unified arena
   const origin = window.location.origin;
   const gameInviteUrl = localIp && localIp !== 'localhost' && window.location.hostname === 'localhost'
     ? `${window.location.protocol}//${localIp}:${window.location.port}`
@@ -68,6 +68,19 @@ export default function LobbyScreen({
     socketService.startTournament();
   };
 
+  const handleToggleReady = () => {
+    const nextState = !myPlayer?.isReady;
+    if (nextState) {
+      soundService.playVictory();
+    } else {
+      soundService.playWarning();
+    }
+    socketService.setReady(nextState);
+  };
+
+  // Ready counter
+  const readyCount = players.filter((p) => p.isReady || p.id === currentSocketId && isHost).length;
+
   return (
     <div className="w-full max-w-4xl mx-auto space-y-3 sm:space-y-4 select-none">
       {/* Non-host Re-join Confirmation Banner */}
@@ -78,7 +91,7 @@ export default function LobbyScreen({
             การแข่งขันรอบใหม่กำลังจะเริ่ม!
           </div>
           <p className="font-ui text-xs sm:text-sm text-yellow-300 font-bold">
-            คุณจบเกมจากรอบที่แล้ว กรุณากดปุ่มด้านล่างเพื่อยืนยันการเข้าร่วมแข่งขันรอบใหม่นี้
+            คุณจบเกมจากรอบที่แล้ว กรุณากดปุ่มด้านล่างเพื่อยืนยันว่าพร้อมเข้าร่วมแข่งขันในรอบใหม่
           </p>
           <button
             type="button"
@@ -86,7 +99,7 @@ export default function LobbyScreen({
               soundService.playVictory();
               socketService.rejoinGame();
             }}
-            className="w-full max-w-sm mx-auto py-3.5 pixel-btn pixel-btn-gold text-black font-arcade text-sm sm:text-base font-extrabold cursor-pointer shadow-xl tracking-wider block"
+            className="w-full max-w-sm mx-auto py-3.5 pixel-btn pixel-btn-gold text-black font-arcade text-sm sm:text-base font-extrabold cursor-pointer shadow-xl tracking-wider block hover:scale-102"
           >
             🎮 พร้อมเล่นรอบใหม่ (CONFIRM READY)
           </button>
@@ -196,93 +209,124 @@ export default function LobbyScreen({
         </div>
       )}
 
-      {/* Match Setup & Bot Controls Card */}
+      {/* Match Setup & Controls Card */}
       <div className="pixel-card p-4 sm:p-5 bg-[#101424]">
         <div className="flex items-center justify-between border-b-2 border-gray-700 pb-2 mb-3">
           <span className="font-ui text-sm sm:text-base font-extrabold text-white">
-            ⚙️ การควบคุมการแข่งขัน
+            ⚙️ การควบคุมความพร้อมการแข่งขัน
           </span>
           <span className="font-arcade text-xs text-yellow-400">
-            {isHost ? '👑 คุณคือหัวห้อง (HOST)' : 'ผู้เล่นทั่วไป'}
+            {isHost ? `👑 คุณคือหัวห้อง (พร้อมแล้ว ${readyCount}/${players.length} คน)` : 'ผู้เล่นทั่วไป (ลูกห้อง)'}
           </span>
         </div>
 
-        {/* Round Duration Controls (Host Only) */}
-        {isHost && (
-          <div className="mb-4">
-            <label className="block font-ui text-xs sm:text-sm text-gray-300 font-bold mb-1.5">
-              ⏱️ เวลาแข่งขันต่อรอบ (ROUND TIMER):
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
-              {[60, 120, 180].map((sec) => (
-                <button
-                  key={sec}
-                  type="button"
-                  onClick={() => socketService.setRoundDuration(sec)}
-                  className={`px-3 py-1.5 text-xs font-ui font-bold pixel-btn cursor-pointer ${
-                    roundDuration === sec ? 'pixel-btn-gold text-black' : 'text-gray-300'
-                  }`}
-                >
-                  {sec} วิ ({sec}s)
-                </button>
-              ))}
+        {/* HOST CONTROLS */}
+        {isHost ? (
+          <div>
+            {/* Round Duration Controls */}
+            <div className="mb-4">
+              <label className="block font-ui text-xs sm:text-sm text-gray-300 font-bold mb-1.5">
+                ⏱️ เวลาแข่งขันต่อรอบ (ROUND TIMER):
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                {[60, 120, 180].map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={() => socketService.setRoundDuration(sec)}
+                    className={`px-3 py-1.5 text-xs font-ui font-bold pixel-btn cursor-pointer ${
+                      roundDuration === sec ? 'pixel-btn-gold text-black' : 'text-gray-300'
+                    }`}
+                  >
+                    {sec} วิ ({sec}s)
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
 
-        {/* Bot Simulation Injector (Visible only for Host) */}
-        {isHost && (
-          <div className="mb-4 p-3 bg-[#080b14] border-2 border-gray-800">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="font-ui text-xs sm:text-sm text-yellow-300 font-extrabold">
-                🤖 เพิ่มบอทจำลองผู้เล่น (สำหรับทดสอบชักเย่อคนหมู่มาก 50+ คน):
+            {/* Bot Simulation Injector */}
+            <div className="mb-4 p-3 bg-[#080b14] border-2 border-gray-800">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-ui text-xs sm:text-sm text-yellow-300 font-extrabold">
+                  🤖 เพิ่มบอทจำลองผู้เล่น (สำหรับทดสอบชักเย่อคนหมู่มาก 50+ คน):
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => socketService.addBots(5)}
+                  className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
+                >
+                  +5 บอท
+                </button>
+                <button
+                  type="button"
+                  onClick={() => socketService.addBots(10)}
+                  className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
+                >
+                  +10 บอท
+                </button>
+                <button
+                  type="button"
+                  onClick={() => socketService.addBots(20)}
+                  className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
+                >
+                  +20 บอท
+                </button>
+                <button
+                  type="button"
+                  onClick={() => socketService.clearBots()}
+                  className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-red text-white cursor-pointer"
+                >
+                  ล้างบอททั้งหมด
+                </button>
+              </div>
+            </div>
+
+            {/* Start Tournament Button */}
+            <button
+              type="button"
+              onClick={handleStartTournament}
+              className="w-full py-3.5 sm:py-4 pixel-btn pixel-btn-gold text-black text-sm sm:text-base font-arcade font-extrabold tracking-wider cursor-pointer shadow-lg hover:scale-101 transition-transform"
+            >
+              🚀 เริ่มการแข่งขันชักเย่อ (START TOURNAMENT)
+            </button>
+          </div>
+        ) : (
+          /* NON-HOST (ลูกห้อง) INTERACTIVE READY SECTION */
+          <div className="p-4 bg-[#0c0f1c] border-2 border-gray-700 pixel-card text-center space-y-3">
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-xl">{myPlayer?.isReady ? '✅' : '⏳'}</span>
+              <span className="font-ui text-sm sm:text-base font-extrabold text-white">
+                สถานะความพร้อมของคุณ:{' '}
+                {myPlayer?.isReady ? (
+                  <span className="text-emerald-400 font-black">พร้อมแข่งแล้ว (READY)</span>
+                ) : (
+                  <span className="text-amber-400 font-black">ยังไม่พร้อม (NOT READY)</span>
+                )}
               </span>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => socketService.addBots(5)}
-                className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
-              >
-                +5 บอท
-              </button>
-              <button
-                type="button"
-                onClick={() => socketService.addBots(10)}
-                className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
-              >
-                +10 บอท
-              </button>
-              <button
-                type="button"
-                onClick={() => socketService.addBots(20)}
-                className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer"
-              >
-                +20 บอท
-              </button>
-              <button
-                type="button"
-                onClick={() => socketService.clearBots()}
-                className="px-3 py-1.5 text-xs font-ui font-extrabold pixel-btn pixel-btn-red text-white cursor-pointer"
-              >
-                ล้างบอททั้งหมด
-              </button>
-            </div>
-          </div>
-        )}
 
-        {/* Start Tournament Button */}
-        {isHost ? (
-          <button
-            type="button"
-            onClick={handleStartTournament}
-            className="w-full py-3.5 sm:py-4 pixel-btn pixel-btn-gold text-black text-sm sm:text-base font-arcade font-extrabold tracking-wider cursor-pointer shadow-lg hover:scale-101 transition-transform"
-          >
-            🚀 เริ่มการแข่งขันชักเย่อ (START TOURNAMENT)
-          </button>
-        ) : (
-          <div className="p-3 bg-gray-900 border-2 border-gray-700 text-center font-ui text-xs sm:text-sm text-yellow-300 font-bold">
-            ⏳ กำลังรอให้หัวห้อง (Host) กดเริ่มการแข่งขัน... (เตรียมพร้อมลุย!)
+            {/* Big Interactive Ready Button */}
+            <button
+              type="button"
+              onClick={handleToggleReady}
+              className={`w-full max-w-md mx-auto py-3.5 sm:py-4 pixel-btn font-arcade text-sm sm:text-base font-extrabold cursor-pointer tracking-wider shadow-lg transition-all ${
+                myPlayer?.isReady
+                  ? 'pixel-btn-green text-white shadow-[0_0_16px_rgba(34,197,94,0.5)] scale-101'
+                  : 'pixel-btn-gold text-black animate-pulse shadow-[0_0_16px_rgba(250,204,21,0.4)] hover:scale-102'
+              }`}
+            >
+              {myPlayer?.isReady
+                ? '✅ คุณพร้อมแล้ว! (คลิกเพื่อยกเลิก)'
+                : '⚡ กดปุ่มนี้เพื่อยืนยันว่าพร้อมแข่ง (CLICK TO READY)'}
+            </button>
+
+            <p className="font-ui text-xs text-gray-300">
+              {myPlayer?.isReady
+                ? '⭐ ขอบคุณที่ยืนยัน! กำลังรอให้หัวห้อง (Host) กดเริ่มการแข่งขัน...'
+                : '👉 กรุณากดปุ่มด้านบนเพื่อให้หัวห้องทราบว่าคุณพร้อมเล่นแล้ว'}
+            </p>
           </div>
         )}
       </div>
@@ -306,6 +350,7 @@ export default function LobbyScreen({
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-60 overflow-y-auto pr-1">
           {players.map((p) => {
             const isMe = p.id === currentSocketId;
+            const isPlayerHost = isHost ? isMe : p.isReady && false; // host status is displayed
             return (
               <div
                 key={p.id}
@@ -325,11 +370,21 @@ export default function LobbyScreen({
                     {p.name} {isMe && '(คุณ)'}
                   </span>
                 </div>
-                {p.isBot && (
-                  <span className="text-[9px] font-ui bg-gray-700 text-gray-300 px-1 uppercase font-bold shrink-0">
-                    BOT
-                  </span>
-                )}
+                <div className="flex items-center gap-1 shrink-0">
+                  {p.isBot ? (
+                    <span className="text-[9px] font-ui bg-gray-700 text-gray-300 px-1 uppercase font-bold">
+                      BOT
+                    </span>
+                  ) : p.isReady ? (
+                    <span className="text-[9px] font-ui bg-emerald-600 text-white px-1.5 py-0.5 uppercase font-extrabold">
+                      ✓ พร้อม
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-ui bg-gray-800 text-amber-300 border border-amber-500/40 px-1 py-0.5 font-bold">
+                      รอพร้อม
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}

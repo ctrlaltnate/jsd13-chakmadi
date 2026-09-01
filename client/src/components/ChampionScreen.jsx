@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import { socketService } from '../services/socket';
 import { soundService } from '../services/sound';
@@ -12,8 +12,11 @@ export default function ChampionScreen({
   isHost = false,
   currentSocketId = null,
   onRejoinGame = null,
+  onReturnToLobby = null,
   onLeaveGame = null
 }) {
+  const [hasConfirmed, setHasConfirmed] = useState(false);
+
   useEffect(() => {
     soundService.playVictory();
 
@@ -38,14 +41,30 @@ export default function ChampionScreen({
   const isMeChampion = champion && champion.id === currentSocketId;
   const mvp = [...players].sort((a, b) => (b.totalPulls || 0) - (a.totalPulls || 0))[0];
 
+  const handleNonHostRejoin = () => {
+    soundService.playVictory();
+    socketService.rejoinGame();
+    if (onRejoinGame) {
+      onRejoinGame();
+    }
+    setHasConfirmed(true);
+
+    // Auto-transition non-host back to lobby after 1.2s
+    setTimeout(() => {
+      if (onReturnToLobby) {
+        onReturnToLobby();
+      }
+    }, 1200);
+  };
+
   return (
     <div className="w-full max-w-xl mx-auto p-5 sm:p-7 bg-[#141828] border-4 border-yellow-400 pixel-card text-center select-none space-y-4 shadow-2xl">
-      {/* 8-bit Trophy Shield Badge from Assets */}
-      <div className="flex justify-center my-1">
+      {/* 8-bit Trophy Shield Badge - Preserves original 1.83:1 widescreen aspect ratio */}
+      <div className="flex justify-center my-2">
         <img
           src={badgeImg}
           alt="Winner Badge"
-          className="w-24 h-24 sm:w-28 sm:h-28 image-pixelated animate-bounce filter drop-shadow-[0_0_12px_rgba(250,204,21,0.8)]"
+          className="w-56 sm:w-72 max-w-full h-auto object-contain image-pixelated animate-bounce filter drop-shadow-[0_0_14px_rgba(250,204,21,0.8)]"
         />
       </div>
 
@@ -97,7 +116,7 @@ export default function ChampionScreen({
       )}
 
       {/* Rematch & Leave Controls */}
-      <div className="pt-2 border-t-2 border-gray-700 space-y-2">
+      <div className="pt-2 border-t-2 border-gray-700 space-y-2.5">
         {isHost ? (
           <button
             type="button"
@@ -113,21 +132,32 @@ export default function ChampionScreen({
           <div className="space-y-2">
             <button
               type="button"
-              onClick={() => {
-                soundService.playVictory();
-                if (onRejoinGame) {
-                  onRejoinGame();
-                } else {
-                  socketService.rejoinGame();
-                }
-              }}
-              className="w-full py-3.5 sm:py-4 pixel-btn pixel-btn-gold text-black text-sm sm:text-base font-arcade font-extrabold cursor-pointer tracking-wider shadow-lg"
+              onClick={handleNonHostRejoin}
+              className={`w-full py-3.5 sm:py-4 pixel-btn text-sm sm:text-base font-arcade font-extrabold cursor-pointer tracking-wider shadow-lg transition-all ${
+                hasConfirmed
+                  ? 'pixel-btn-green text-white scale-102 shadow-[0_0_15px_rgba(34,197,94,0.5)]'
+                  : 'pixel-btn-gold text-black hover:scale-101'
+              }`}
             >
-              🎮 พร้อมเล่นรอบใหม่ (READY FOR NEXT ROUND)
+              {hasConfirmed
+                ? '✅ คุณพร้อมแล้ว! (กำลังพากลับล็อบบี้...)'
+                : '🎮 พร้อมเล่นรอบใหม่ (READY FOR NEXT ROUND)'}
             </button>
             <p className="font-ui text-xs text-yellow-300 font-bold">
-              กดเพื่อยืนยันว่าพร้อมเล่นต่อในรอบใหม่
+              {hasConfirmed
+                ? 'ยืนยันความพร้อมแล้ว! กำลังพากลับสู่ห้องรวมพลเพื่อรอหัวห้องเริ่มรอบใหม่'
+                : 'กดเพื่อยืนยันว่าพร้อมเล่นต่อในรอบถัดไป'}
             </p>
+
+            {onReturnToLobby && (
+              <button
+                type="button"
+                onClick={onReturnToLobby}
+                className="w-full py-2.5 pixel-btn bg-[#1a2138] hover:bg-[#253052] text-white text-xs sm:text-sm font-ui font-extrabold cursor-pointer transition-colors"
+              >
+                🏠 กลับสู่ห้องรวมพลทันที (GO TO LOBBY)
+              </button>
+            )}
           </div>
         )}
 

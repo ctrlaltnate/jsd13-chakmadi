@@ -58,6 +58,7 @@ class Player {
     this.name = name;
     this.team = null; // 'red' | 'blue' | null
     this.status = 'active'; // 'active' | 'eliminated' | 'spectator' | 'waiting_rejoin'
+    this.isReady = isBot; // Bots are ready by default; players can toggle ready
     this.avatar = avatar;
     this.roundPulls = 0;
     this.totalPulls = 0;
@@ -131,6 +132,7 @@ class GameRoom {
         name: p.name,
         team: p.team,
         status: p.status,
+        isReady: p.id === this.hostSocketId ? true : Boolean(p.isReady),
         avatar: p.avatar,
         roundPulls: p.roundPulls,
         totalPulls: p.totalPulls,
@@ -424,9 +426,37 @@ io.on('connection', (socket) => {
   socket.on('rejoin_game', () => {
     if (mainRoom.players[socket.id]) {
       mainRoom.players[socket.id].status = 'active';
+      mainRoom.players[socket.id].isReady = true;
       mainRoom.players[socket.id].team = null;
       mainRoom.players[socket.id].roundPulls = 0;
       mainRoom.players[socket.id].totalPulls = 0;
+      mainRoom.broadcastState();
+    }
+  });
+
+  // Non-host player toggles ready state in lobby
+  socket.on('set_ready', (isReady) => {
+    if (mainRoom.players[socket.id]) {
+      const current = mainRoom.players[socket.id].isReady;
+      const next = typeof isReady === 'boolean' ? isReady : !current;
+      mainRoom.players[socket.id].isReady = next;
+      if (next) {
+        mainRoom.players[socket.id].status = 'active';
+      }
+      mainRoom.broadcastState();
+    }
+  });
+
+  // Update Player Profile (Name and/or Avatar)
+  socket.on('update_profile', ({ name, avatar }) => {
+    if (mainRoom.players[socket.id]) {
+      const sanitized = (name || '').trim().slice(0, 14);
+      if (sanitized) {
+        mainRoom.players[socket.id].name = sanitized;
+      }
+      if (typeof avatar === 'number') {
+        mainRoom.players[socket.id].avatar = avatar;
+      }
       mainRoom.broadcastState();
     }
   });
@@ -531,8 +561,12 @@ io.on('connection', (socket) => {
       p.team = null;
       if (p.id === mainRoom.hostSocketId || p.isBot) {
         p.status = 'active';
+        p.isReady = true;
+      } else if (p.isReady) {
+        p.status = 'active';
       } else {
         p.status = 'waiting_rejoin';
+        p.isReady = false;
       }
     });
 
