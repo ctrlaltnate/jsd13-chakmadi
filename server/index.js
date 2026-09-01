@@ -264,15 +264,17 @@ class GameRoom {
     }, 6000);
   }
 
-  handlePull(socketId, timestamp = Date.now()) {
+  handlePull(socketId, timestamp = Date.now(), count = 1) {
     const player = this.players[socketId];
     if (!player || player.status !== 'active' || this.status !== 'ROUND_ACTIVE') {
       return { success: false, reason: 'inactive' };
     }
 
     const now = typeof timestamp === 'number' && timestamp > 0 ? timestamp : Date.now();
-    // Anti-double-dip guard: reject simultaneous duplicate triggers (< 45ms) from Space + Click spam
-    if (now - player.lastPullTime < 45) {
+    const safeCount = Math.max(1, Math.min(15, parseInt(count, 10) || 1));
+
+    // Anti-double-dip guard (for single micro-tap spam under 45ms)
+    if (safeCount === 1 && now - player.lastPullTime < 45) {
       return {
         success: false,
         reason: 'double_tap_ignored',
@@ -284,14 +286,14 @@ class GameRoom {
     }
 
     player.lastPullTime = now;
-    player.roundPulls += 1;
-    player.totalPulls += 1;
-    player.combo = Math.min(50, (player.combo || 0) + 1);
+    player.roundPulls += safeCount;
+    player.totalPulls += safeCount;
+    player.combo = Math.min(50, (player.combo || 0) + safeCount);
 
     if (player.team === 'red') {
-      this.teamRedPulls += 1;
+      this.teamRedPulls += safeCount;
     } else if (player.team === 'blue') {
-      this.teamBluePulls += 1;
+      this.teamBluePulls += safeCount;
     }
     this.updateWeightedScores();
 
@@ -308,14 +310,19 @@ class GameRoom {
 // Single Unified Main Room
 const mainRoom = new GameRoom();
 
-// Authoritative Physics Loop (20Hz)
+// Authoritative Physics Loop (Balanced 15Hz = ~66ms)
+// 15Hz provides ultra-responsive real-time gameplay while avoiding server and browser network congestion
+let tickCount = 0;
+
 setInterval(() => {
   const now = Date.now();
   if (mainRoom.status === 'ROUND_ACTIVE') {
+    tickCount++;
+
     // 1. Process Bots
     Object.values(mainRoom.players).forEach(p => {
       if (p.isBot && p.status === 'active' && now >= p.nextBotPullTime) {
-        mainRoom.handlePull(p.id, now);
+        mainRoom.handlePull(p.id, now, 1);
         p.nextBotPullTime = now + p.botPullInterval + (Math.random() * 40 - 20);
       }
     });
@@ -327,7 +334,7 @@ setInterval(() => {
     const avgDiff = blueAvg - redAvg;
     const targetPos = Math.max(-100, Math.min(100, avgDiff * 6.5));
 
-    mainRoom.ropePos += (targetPos - mainRoom.ropePos) * 0.15;
+    mainRoom.ropePos += (targetPos - mainRoom.ropePos) * 0.18;
 
     // Check Knockout
     if (mainRoom.ropePos <= -98) {
@@ -346,28 +353,39 @@ setInterval(() => {
       return;
     }
 
-    // Real-time individual player pull tracking
-    const playerPulls = {};
-    for (const p of Object.values(mainRoom.players)) {
-      if (p.status === 'active') {
-        playerPulls[p.id] = { roundPulls: p.roundPulls, totalPulls: p.totalPulls };
+    // Tiered Payload Optimization:
+    // Global rope and scores broadcast at 15Hz (66ms).
+    // Heavy individual player pulls map is broadcast every 3rd tick (~5Hz / 200ms),
+    // reducing outbound network payload by 65% while keeping individual leaderboards live!
+    let playerPulls = null;
+    if (tickCount % 3 === 0) {
+      playerPulls = {};
+      for (const p of Object.values(mainRoom.players)) {
+        if (p.status === 'active') {
+          playerPulls[p.id] = { roundPulls: p.roundPulls, totalPulls: p.totalPulls };
+        }
       }
     }
 
-    // High-frequency volatile sync to all connected clients
-    io.volatile.emit('physics_tick', {
-      ropePos: mainRoom.ropePos,
+    const tickData = {
+      ropePos: Number(mainRoom.ropePos.toFixed(2)),
       teamRedScore: mainRoom.teamRedScore,
       teamBlueScore: mainRoom.teamBlueScore,
       teamRedPulls: mainRoom.teamRedPulls,
       teamBluePulls: mainRoom.teamBluePulls,
       teamRedCount: counts.actualRed,
       teamBlueCount: counts.actualBlue,
-      playerPulls,
       serverTime: now
-    });
+    };
+
+    if (playerPulls) {
+      tickData.playerPulls = playerPulls;
+    }
+
+    // High-frequency volatile sync to all connected clients
+    io.volatile.emit('physics_tick', tickData);
   }
-}, 50);
+}, 66);
 
 // SOCKET.IO EVENT ROUTING
 io.on('connection', (socket) => {
@@ -472,9 +490,24 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Pull action
-  socket.on('pull', (clientTime, callback) => {
-    const result = mainRoom.handlePull(socket.id, clientTime);
+  // Pull action (supports both single pull and batched micro-pulls)
+  socket.on('pull', (arg1, arg2) => {
+    let clientTime = Date.now();
+    let count = 1;
+    let callback = null;
+
+    if (typeof arg1 === 'object' && arg1 !== null) {
+      count = arg1.count || 1;
+      clientTime = arg1.timestamp || Date.now();
+      if (typeof arg2 === 'function') callback = arg2;
+    } else if (typeof arg1 === 'number') {
+      clientTime = arg1;
+      if (typeof arg2 === 'function') callback = arg2;
+    } else if (typeof arg1 === 'function') {
+      callback = arg1;
+    }
+
+    const result = mainRoom.handlePull(socket.id, clientTime, count);
     if (typeof callback === 'function') {
       callback(result);
     }

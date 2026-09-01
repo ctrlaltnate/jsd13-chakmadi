@@ -71,8 +71,8 @@ export const socketService = {
     socket.emit('update_name', name);
   },
 
-  pull(callback) {
-    socket.emit('pull', Date.now(), callback);
+  pull(count = 1, callback = null) {
+    socket.emit('pull', { count, timestamp: Date.now() }, callback);
   },
 
   cheer(team, emote = '🔥') {

@@ -35,6 +35,29 @@ export default function PullController({
   const isSpaceDownRef = useRef(false);
   const lastInputTimeRef = useRef(0);
 
+  // Micro-batch pull accumulator: groups rapid taps within 50ms into a single packet
+  const pendingPullsRef = useRef(0);
+  const flushTimerRef = useRef(null);
+
+  const flushPulls = useCallback(() => {
+    if (pendingPullsRef.current > 0) {
+      const count = pendingPullsRef.current;
+      pendingPullsRef.current = 0;
+      socketService.pull(count);
+    }
+    flushTimerRef.current = null;
+  }, []);
+
+  // Flush remaining pulls on unmount or when round ends
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+        flushPulls();
+      }
+    };
+  }, [flushPulls]);
+
   // Central pull trigger function
   const executePull = useCallback(() => {
     if (!roundActive || playerStatus !== 'active') {
@@ -42,8 +65,8 @@ export default function PullController({
     }
 
     const now = Date.now();
-    // Anti-Double-Dipping: Reject simultaneous inputs faster than 65ms (prevents pressing Space & Click together)
-    if (now - lastInputTimeRef.current < 65) {
+    // Anti-Double-Dipping: Reject simultaneous inputs faster than 55ms (prevents pressing Space & Click together)
+    if (now - lastInputTimeRef.current < 55) {
       return;
     }
     lastInputTimeRef.current = now;
@@ -83,9 +106,12 @@ export default function PullController({
       setPopups((prev) => prev.filter((p) => p.id !== popupId));
     }, 600);
 
-    // Emit pull to server
-    socketService.pull();
-  }, [roundActive, playerStatus]);
+    // Smooth network communication: micro-batch pulls (flush within 50ms)
+    pendingPullsRef.current += 1;
+    if (!flushTimerRef.current) {
+      flushTimerRef.current = setTimeout(flushPulls, 50);
+    }
+  }, [roundActive, playerStatus, flushPulls]);
 
   // Pointer Down (Click / Tap) - Requires releasing and blocked if Spacebar is pressed
   const handlePointerDown = (e) => {
