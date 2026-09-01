@@ -1,9 +1,10 @@
 import { io } from 'socket.io-client';
 
-// Determine socket server URL
-// In development Vite proxies /socket.io to localhost:3001,
-// or if accessed via LAN IP like 192.168.x.x:5173, Vite proxy routes it automatically.
-const socket = io({
+// Support separating Frontend on Vercel and Backend on Render:
+// Set VITE_SERVER_URL on Vercel to your Render backend URL (e.g. https://your-backend.onrender.com)
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
+
+const socket = io(SERVER_URL || undefined, {
   transports: ['websocket', 'polling'],
   autoConnect: true
 });
