@@ -62,10 +62,10 @@ export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-left">
-          {/* Avatar Selector */}
+          {/* Avatar Selector (Cosmetic only, no gameplay effect) */}
           <div>
-            <label className="block text-xs font-arcade text-white mb-2">
-              SELECT CLASS / เลือกตัวละคร:
+            <label className="block text-xs font-arcade text-white mb-1.5">
+              SELECT AVATAR / เลือกอวาตาร์ตัวละคร:
             </label>
             <div className="grid grid-cols-6 gap-2">
               {AVATARS.map((av) => (
@@ -88,11 +88,14 @@ export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
               ))}
             </div>
             <div className="flex justify-between items-center mt-1.5 text-xs font-ui">
-              <span className="text-gray-300">อาชีพ:</span>
+              <span className="text-gray-300">อวาตาร์:</span>
               <span className="text-yellow-400 font-bold font-arcade text-[10px]">
-                {AVATARS[selectedAvatar].name.toUpperCase()}
+                {AVATARS[selectedAvatar].name.toUpperCase()} (รูปโปรไฟล์)
               </span>
             </div>
+            <p className="text-[10px] text-gray-400 font-ui mt-0.5">
+              * เป็นเพียงรูปโปรไฟล์ ไม่มีผลต่อพลังดึง ทุกคนมีพลังเท่ากัน 100%
+            </p>
           </div>
 
           {/* Name Input */}

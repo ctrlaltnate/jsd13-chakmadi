@@ -288,7 +288,20 @@ class Room {
       return { success: false, reason: 'inactive' };
     }
 
-    player.lastPullTime = timestamp;
+    const now = typeof timestamp === 'number' && timestamp > 0 ? timestamp : Date.now();
+    // Anti-double-dip guard: reject simultaneous duplicate triggers (< 45ms) from Space + Click spam
+    if (now - player.lastPullTime < 45) {
+      return {
+        success: false,
+        reason: 'double_tap_ignored',
+        combo: player.combo,
+        team: player.team,
+        roundPulls: player.roundPulls,
+        totalPulls: player.totalPulls
+      };
+    }
+
+    player.lastPullTime = now;
     player.roundPulls += 1;
     player.totalPulls += 1;
     player.combo = Math.min(50, (player.combo || 0) + 1);

@@ -69,11 +69,12 @@ socket1.on('game_state', async (state) => {
     assert(pull1.success === true, 'First valid pull succeeds');
     console.log('✅ PASSED: First pull succeeds');
 
-    // Rapid second pull (< 100ms) - should SUCCEED now because anti-bot restriction was removed!
+    // Rapid second pull (e.g. 55ms, testing fast physical tapping without double-dipping)
+    await new Promise((r) => setTimeout(r, 55));
     const pull2 = await new Promise((res) => socket1.emit('pull', Date.now(), res));
-    console.log('Pull 2 result (rapid unlimited):', pull2);
-    assert(pull2.success === true, 'Rapid pull succeeds with unlimited click speed');
-    console.log('✅ PASSED: Rapid pull succeeds (Unlimited click speed enabled!)');
+    console.log('Pull 2 result (rapid tapping):', pull2);
+    assert(pull2.success === true, 'Rapid pull succeeds with fast click speed');
+    console.log('✅ PASSED: Rapid pull succeeds (Fast click speed enabled!)');
 
     console.log('\n===========================================');
     console.log(`🎉 ALL ${testsPassed} VERIFICATION TESTS PASSED SUCCESSFULLY!`);

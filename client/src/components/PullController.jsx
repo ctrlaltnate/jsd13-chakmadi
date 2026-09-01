@@ -30,15 +30,23 @@ export default function PullController({
     }
   }, [roundActive]);
 
-  // Guard against holding down (No Hold-to-Pull!)
+  // Guard against holding down and simultaneous double-input (Space + Click together)
   const isPointerDownRef = useRef(false);
   const isSpaceDownRef = useRef(false);
+  const lastInputTimeRef = useRef(0);
 
   // Central pull trigger function
   const executePull = useCallback(() => {
     if (!roundActive || playerStatus !== 'active') {
       return;
     }
+
+    const now = Date.now();
+    // Anti-Double-Dipping: Reject simultaneous inputs faster than 65ms (prevents pressing Space & Click together)
+    if (now - lastInputTimeRef.current < 65) {
+      return;
+    }
+    lastInputTimeRef.current = now;
 
     // Instant optimistic counter increment (0ms response)
     setLocalPulls((prev) => prev + 1);
@@ -79,13 +87,14 @@ export default function PullController({
     socketService.pull();
   }, [roundActive, playerStatus]);
 
-  // Pointer Down (Click / Tap) - Requires releasing before pulling again
+  // Pointer Down (Click / Tap) - Requires releasing and blocked if Spacebar is pressed
   const handlePointerDown = (e) => {
     if (e) {
       e.preventDefault();
     }
-    if (isPointerDownRef.current) {
-      return; // Prevent hold-to-pull
+    // Block if pointer is held OR Spacebar is currently pressed
+    if (isPointerDownRef.current || isSpaceDownRef.current) {
+      return;
     }
     isPointerDownRef.current = true;
     executePull();
@@ -95,12 +104,13 @@ export default function PullController({
     isPointerDownRef.current = false;
   };
 
-  // Global Spacebar listener (strictly single-tap, no hold)
+  // Global Spacebar listener (strictly single-tap, blocked if Pointer is pressed)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.code === 'Space' || e.key === ' ') {
         e.preventDefault();
-        if (e.repeat || isSpaceDownRef.current) {
+        // Block if auto-repeat, Space already down, OR Mouse pointer currently pressed
+        if (e.repeat || isSpaceDownRef.current || isPointerDownRef.current) {
           return;
         }
         isSpaceDownRef.current = true;
@@ -239,7 +249,7 @@ export default function PullController({
       <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5 font-ui text-[11px] sm:text-xs font-bold text-white text-center">
         <span>ทีม: <strong className={`${teamColorText} font-extrabold`}>{playerTeam ? `TEAM ${playerTeam.toUpperCase()}` : 'กำลังสุ่มทีม...'}</strong></span>
         <span>•</span>
-        <span className="text-yellow-300">⌨️ Spacebar</span>
+        <span className="text-yellow-300">⌨️ Space หรือ คลิก (กดพร้อมกันนับทีเดียว)</span>
         <span>•</span>
         <span className="text-red-300 font-extrabold">🚫 ห้ามกดค้าง</span>
       </div>
