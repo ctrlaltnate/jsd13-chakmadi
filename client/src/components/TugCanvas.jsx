@@ -280,19 +280,19 @@ export default function TugCanvas({
   }
 
   return (
-    <div className="relative w-full overflow-hidden border-4 border-[#3b4261] bg-[#0c0e17] pixel-card">
+    <div className="relative w-full overflow-hidden border-2 sm:border-3 border-[#3b4261] bg-[#0c0e17] pixel-card shrink-0">
       <canvas
         ref={canvasRef}
         width={800}
         height={260}
-        className="w-full h-[180px] sm:h-[220px] md:h-[260px] block"
+        className="w-full h-[115px] xs:h-[130px] sm:h-[160px] md:h-[190px] block"
       />
       {/* Direction Indicators */}
-      <div className="absolute top-2 left-3 flex items-center gap-1 font-pixel text-[10px] sm:text-xs text-red-400 bg-black/60 px-2 py-1 border border-red-500/50">
-        <span>◀ TEAM RED PULL</span>
+      <div className="absolute top-1.5 left-2 flex items-center gap-1 font-pixel text-[9px] sm:text-xs text-red-400 bg-black/70 px-1.5 py-0.5 border border-red-500/50">
+        <span>◀ RED</span>
       </div>
-      <div className="absolute top-2 right-3 flex items-center gap-1 font-pixel text-[10px] sm:text-xs text-blue-400 bg-black/60 px-2 py-1 border border-blue-500/50">
-        <span>TEAM BLUE PULL ▶</span>
+      <div className="absolute top-1.5 right-2 flex items-center gap-1 font-pixel text-[9px] sm:text-xs text-blue-400 bg-black/70 px-1.5 py-0.5 border border-blue-500/50">
+        <span>BLUE ▶</span>
       </div>
     </div>
   );

@@ -162,16 +162,16 @@ export default function PullController({
   const teamColorText = playerTeam === 'red' ? 'text-red-400' : 'text-blue-400';
 
   return (
-    <div className="w-full max-w-md mx-auto flex flex-col items-center justify-center py-2 px-2 select-none">
+    <div className="w-full max-w-md mx-auto flex flex-col items-center justify-center py-1 px-1 select-none shrink-0">
       {/* Combo / Rhythm Indicator */}
-      <div className="h-6 mb-1 text-center font-ui text-sm sm:text-base font-extrabold">
+      <div className="h-5 mb-0.5 text-center font-ui text-xs sm:text-sm font-extrabold">
         {combo >= 3 ? (
           <span className="text-yellow-300 animate-pulse pixel-text-shadow">
             ⚡ COMBO x{combo}! รัวนิ้วเร็วเต็มพิกัด!
           </span>
         ) : (
           <span className="text-white">
-            กดปุ่ม <strong className="text-yellow-400 font-arcade">[SPACE]</strong> หรือ <strong className="text-yellow-400 font-arcade">คลิก</strong> (ห้ามกดค้าง)
+            กด <strong className="text-yellow-400 font-arcade">[SPACE]</strong> หรือ <strong className="text-yellow-400 font-arcade">แตะปุ่ม</strong> (ห้ามกดค้าง)
           </span>
         )}
       </div>
@@ -183,7 +183,7 @@ export default function PullController({
           {popups.map((p) => (
             <div
               key={p.id}
-              className="absolute font-ui text-base sm:text-lg text-yellow-300 font-extrabold whitespace-nowrap animate-float-pop pixel-text-shadow pointer-events-none"
+              className="absolute font-ui text-sm sm:text-base text-yellow-300 font-extrabold whitespace-nowrap animate-float-pop pixel-text-shadow pointer-events-none"
               style={{ left: `${p.x}px` }}
             >
               {p.text}
@@ -199,7 +199,7 @@ export default function PullController({
           onPointerLeave={handlePointerUp}
           onPointerCancel={handlePointerUp}
           disabled={!roundActive}
-          className={`w-full max-w-sm h-28 sm:h-32 pixel-pull-btn text-2xl sm:text-3xl font-arcade flex flex-col items-center justify-center gap-1 ${
+          className={`w-full max-w-xs sm:max-w-sm h-20 xs:h-24 sm:h-28 pixel-pull-btn text-xl sm:text-2xl font-arcade flex flex-col items-center justify-center gap-0.5 ${
             isPressed ? 'pressed' : ''
           } ${btnShake ? 'btn-shake' : ''} ${!roundActive ? 'opacity-50 cursor-not-allowed grayscale' : 'cursor-pointer'}`}
         >
@@ -208,19 +208,19 @@ export default function PullController({
             <span>PULL! (ดึง!)</span>
             <span>💥</span>
           </div>
-          <span className="text-xs sm:text-sm font-ui text-yellow-200 font-extrabold uppercase tracking-wide">
+          <span className="text-[11px] sm:text-xs font-ui text-yellow-200 font-extrabold uppercase tracking-wide">
             {roundActive ? `กด SPACE หรือ แตะรัวๆ (ทีม ${playerTeam?.toUpperCase()})` : 'รอสัญญาณเริ่ม'}
           </span>
         </button>
       </div>
 
       {/* Controls Hint & Anti-Hold Rule */}
-      <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2 font-ui text-xs sm:text-sm font-bold text-white text-center">
+      <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5 font-ui text-[11px] sm:text-xs font-bold text-white text-center">
         <span>ทีม: <strong className={`${teamColorText} font-extrabold`}>{playerTeam ? `TEAM ${playerTeam.toUpperCase()}` : 'กำลังสุ่มทีม...'}</strong></span>
         <span>•</span>
-        <span className="text-yellow-300">⌨️ กดปุ่ม Spacebar ได้</span>
+        <span className="text-yellow-300">⌨️ Spacebar</span>
         <span>•</span>
-        <span className="text-red-300 font-extrabold">🚫 ไม่สามารถกดค้างได้</span>
+        <span className="text-red-300 font-extrabold">🚫 ห้ามกดค้าง</span>
       </div>
     </div>
   );

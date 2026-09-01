@@ -218,12 +218,12 @@ export default function App() {
   const activeSurvivors = gameState.players.filter((p) => p.status === 'active');
 
   return (
-    <div className="relative min-h-screen min-h-dvh bg-[#070912] text-white flex flex-col justify-between">
+    <div className={`relative ${gameState.status === 'ROUND_ACTIVE' ? 'h-screen h-dvh max-h-screen max-h-dvh overflow-hidden' : 'min-h-screen min-h-dvh'} bg-[#070912] text-white flex flex-col justify-between`}>
       {/* CRT Scanline Overlay */}
       {scanlines && <div className="fixed inset-0 scanlines pointer-events-none z-50"></div>}
 
       {/* Top Retro Header Bar */}
-      <header className="sticky top-0 z-40 bg-[#0f1322]/95 backdrop-blur-xs border-b-3 border-[#334155] px-2.5 sm:px-4 py-2 select-none shadow-md">
+      <header className="sticky top-0 z-40 bg-[#0f1322]/95 backdrop-blur-xs border-b-2 sm:border-b-3 border-[#334155] px-2.5 sm:px-4 py-1 sm:py-1.5 select-none shadow-md shrink-0">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
           {/* Logo & Title */}
           <div className="flex items-center gap-2">
@@ -345,7 +345,7 @@ export default function App() {
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-2 sm:p-3 flex flex-col justify-center">
+      <main className={`flex-1 max-w-6xl w-full mx-auto p-1 sm:p-2.5 flex flex-col ${gameState.status === 'ROUND_ACTIVE' ? 'justify-between overflow-hidden' : 'justify-center'}`}>
         {/* LOBBY STATE */}
         {gameState.status === 'LOBBY' && (
           <LobbyScreen
@@ -390,11 +390,11 @@ export default function App() {
           </>
         )}
 
-        {/* ROUND ACTIVE STATE - 3-Column layout on desktop, stacked on mobile */}
+        {/* ROUND ACTIVE STATE - 3-Column layout on desktop, perfectly fits screen on mobile */}
         {gameState.status === 'ROUND_ACTIVE' && (
-          <div className="w-full flex flex-col lg:flex-row items-stretch justify-center gap-3">
+          <div className="w-full flex flex-col lg:flex-row items-stretch justify-center gap-1.5 lg:gap-3 flex-1 overflow-hidden">
             {/* LEFT SIDEBAR: TEAM RED (DESKTOP) */}
-            <div className="hidden lg:block w-60 xl:w-68 shrink-0">
+            <div className="hidden lg:block w-56 xl:w-64 shrink-0 overflow-y-auto max-h-[82vh]">
               <TeamPanel
                 team="red"
                 players={gameState.players}
@@ -403,7 +403,7 @@ export default function App() {
             </div>
 
             {/* CENTER ARENA: SCOREBOARD, CANVAS & CONTROLLER */}
-            <div className="flex-1 max-w-2xl w-full mx-auto flex flex-col space-y-2">
+            <div className="flex-1 max-w-2xl w-full mx-auto flex flex-col justify-between py-0.5 space-y-1 overflow-hidden">
               {/* 1. Central Scoreboard with dynamic leader highlight */}
               <Scoreboard
                 roundNumber={gameState.roundNumber}
@@ -435,18 +435,10 @@ export default function App() {
                 playerTeam={myPlayer?.team}
                 roundActive={true}
               />
-
-              {/* 4. Dual Team Rosters (Visible only on mobile/tablet screens) */}
-              <div className="lg:hidden">
-                <TeamRosters
-                  players={gameState.players}
-                  currentSocketId={currentSocketId}
-                />
-              </div>
             </div>
 
             {/* RIGHT SIDEBAR: TEAM BLUE (DESKTOP) */}
-            <div className="hidden lg:block w-60 xl:w-68 shrink-0">
+            <div className="hidden lg:block w-56 xl:w-64 shrink-0 overflow-y-auto max-h-[82vh]">
               <TeamPanel
                 team="blue"
                 players={gameState.players}
@@ -480,10 +472,12 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer bar */}
-      <footer className="bg-[#090b14] border-t border-gray-800 py-1.5 px-3 text-center font-ui text-xs text-white">
-        <span>🎮 CROWD TUG-OF-WAR • REAL-TIME WEBSOCKET • UNLIMITED SPEED • FAIR PLAY</span>
-      </footer>
+      {/* Footer bar (Hidden during active round to fit screen without scrolling) */}
+      {gameState.status !== 'ROUND_ACTIVE' && (
+        <footer className="bg-[#090b14] border-t border-gray-800 py-1.5 px-3 text-center font-ui text-xs text-white shrink-0">
+          <span>🎮 CROWD TUG-OF-WAR • REAL-TIME WEBSOCKET • UNLIMITED SPEED • FAIR PLAY</span>
+        </footer>
+      )}
 
       {/* Player Join Name Modal */}
       <JoinModal
