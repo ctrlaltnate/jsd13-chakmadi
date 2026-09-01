@@ -1,7 +1,6 @@
 import { io } from 'socket.io-client';
 
 // Support separating Frontend on Vercel and Backend on Render:
-// Set VITE_SERVER_URL on Vercel to your Render backend URL (e.g. https://your-backend.onrender.com)
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
 
 const socket = io(SERVER_URL || undefined, {
@@ -27,14 +26,16 @@ socket.on('sync_time_reply', ({ clientSendTime, serverTime }) => {
   const receiveTime = Date.now();
   const rtt = receiveTime - clientSendTime;
   latency = Math.round(rtt / 2);
-  // Estimate server time at receiveTime
   serverTimeOffset = (serverTime + latency) - receiveTime;
 });
 
+// Periodic sync every 15s
+setInterval(syncClock, 15000);
+
 // Store host token automatically when host confirmation is received
 socket.on('join_confirmed', (data) => {
-  if (data?.isHost && data?.hostToken && data?.roomId) {
-    localStorage.setItem(`tug_host_token_${data.roomId}`, data.hostToken);
+  if (data?.isHost && data?.hostToken) {
+    localStorage.setItem('tug_host_token', data.hostToken);
   }
 });
 
@@ -49,35 +50,13 @@ export const socketService = {
     return latency;
   },
 
-  joinGame(name, avatar = 0, roomId = 'MAIN') {
-    const hostToken = localStorage.getItem(`tug_host_token_${roomId}`) || null;
-    socket.emit('join_game', { name, avatar, roomId, hostToken });
-  },
-
-  createRoom(name, avatar = 0, callback) {
-    socket.emit('create_room', { name, avatar }, (res) => {
-      if (res?.hostToken && res?.roomId) {
-        localStorage.setItem(`tug_host_token_${res.roomId}`, res.hostToken);
-      }
-      if (typeof callback === 'function') {
-        callback(res);
-      }
-    });
+  joinGame(name, avatar = 0) {
+    const hostToken = localStorage.getItem('tug_host_token') || null;
+    socket.emit('join_game', { name, avatar, hostToken });
   },
 
   rejoinGame() {
     socket.emit('rejoin_game');
-  },
-
-  switchRoom(roomId) {
-    const hostToken = localStorage.getItem(`tug_host_token_${roomId}`) || null;
-    socket.emit('switch_room', roomId);
-    socket.emit('join_game', {
-      name: localStorage.getItem('tug_player_name') || 'Fighter',
-      avatar: parseInt(localStorage.getItem('tug_player_avatar') || '0', 10),
-      roomId,
-      hostToken
-    });
   },
 
   updateName(name) {
@@ -110,10 +89,6 @@ export const socketService = {
 
   resetTournament() {
     socket.emit('reset_tournament');
-  },
-
-  claimHost() {
-    socket.emit('claim_host');
   },
 
   leaveGame() {

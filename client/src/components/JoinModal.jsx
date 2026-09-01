@@ -1,19 +1,21 @@
 import React, { useState } from 'react';
-import { soundService } from '../services/sound';
 import { socketService } from '../services/socket';
+import { soundService } from '../services/sound';
 
 const AVATARS = [
-  { id: 0, name: 'Brawler', icon: '🥊' },
-  { id: 1, name: 'Knight', icon: '⚔️' },
-  { id: 2, name: 'Ninja', icon: '🥷' },
-  { id: 3, name: 'Mage', icon: '🧙‍♂️' },
-  { id: 4, name: 'Cyborg', icon: '🤖' },
-  { id: 5, name: 'Pirate', icon: '🏴‍☠️' }
+  { id: 0, name: 'Boxer (นักมวย)', icon: '🥊' },
+  { id: 1, name: 'Warrior (นักรบ)', icon: '⚔️' },
+  { id: 2, name: 'Ninja (นินจา)', icon: '🥷' },
+  { id: 3, name: 'Wizard (จอมเวทย์)', icon: '🧙‍♂️' },
+  { id: 4, name: 'Robot (หุ่นยนต์)', icon: '🤖' },
+  { id: 5, name: 'Pirate (โจรสลัด)', icon: '🏴‍☠️' }
 ];
 
-export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
+export default function JoinModal({ isOpen, onJoined }) {
   const [name, setName] = useState(() => localStorage.getItem('tug_player_name') || '');
-  const [selectedAvatar, setSelectedAvatar] = useState(() => parseInt(localStorage.getItem('tug_player_avatar') || '0', 10));
+  const [selectedAvatar, setSelectedAvatar] = useState(() => {
+    return parseInt(localStorage.getItem('tug_player_avatar') || '0', 10);
+  });
   const [error, setError] = useState('');
 
   if (!isOpen) return null;
@@ -22,7 +24,7 @@ export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
     e.preventDefault();
     const cleanName = name.trim();
     if (!cleanName) {
-      setError('กรุณาใส่ชื่อของคุณ! (ENTER YOUR NAME)');
+      setError('กรุณาพิมพ์ชื่อของคุณก่อนเข้าเล่น');
       soundService.playWarning();
       return;
     }
@@ -33,32 +35,27 @@ export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
     }
 
     soundService.playVictory();
-    socketService.joinGame(cleanName, selectedAvatar, roomId);
+    socketService.joinGame(cleanName, selectedAvatar);
     localStorage.setItem('tug_player_name', cleanName);
     localStorage.setItem('tug_player_avatar', selectedAvatar);
-    onJoined({ name: cleanName, avatar: selectedAvatar, roomId });
+    onJoined({ name: cleanName, avatar: selectedAvatar });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-xs">
       <div className="pixel-card w-full max-w-sm sm:max-w-md p-5 sm:p-6 bg-[#121626] text-center border-4 border-[#475569]">
-        {/* Retro Header Tag with Room Code */}
+        {/* Retro Header Tag */}
         <div className="flex items-center justify-center gap-2 mb-3">
           <div className="px-2.5 py-1 bg-amber-400 text-black text-xs font-bold uppercase tracking-wider pixel-border">
             INSERT COIN • พร้อมลงแข่ง
           </div>
-          {roomId && (
-            <div className="px-2.5 py-1 bg-[#171d30] border-2 border-yellow-400 text-yellow-300 font-arcade text-xs tracking-wider">
-              {roomId}
-            </div>
-          )}
         </div>
         
         <h2 className="text-2xl sm:text-3xl font-arcade text-white pixel-text-shadow mb-1">
           PLAYER SELECT
         </h2>
-        <p className="font-ui text-base text-yellow-300 font-bold mb-5 tracking-wide">
-          เลือกตัวละครและพิมพ์ชื่อของคุณเพื่อเข้าสู่ห้อง {roomId}!
+        <p className="font-ui text-sm sm:text-base text-yellow-300 font-bold mb-5 tracking-wide">
+          เลือกตัวละครและพิมพ์ชื่อของคุณเพื่อเข้าสู่สนามแข่งขัน!
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-left">
@@ -101,7 +98,7 @@ export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
           {/* Name Input */}
           <div>
             <label className="block text-xs font-arcade text-white mb-1.5">
-              PLAYER NAME / ชื่อผู้เล่น:
+              FIGHTER NAME / ชื่อของคุณ:
             </label>
             <input
               type="text"
@@ -110,13 +107,13 @@ export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
                 setName(e.target.value);
                 setError('');
               }}
-              placeholder="พิมพ์ชื่อของคุณที่นี่..."
+              placeholder="พิมพ์ชื่อของคุณ (สูงสุด 14 ตัว)..."
               maxLength={14}
               autoFocus
-              className="w-full px-4 py-3 bg-[#080b14] border-3 border-gray-600 focus:border-yellow-400 text-white font-ui font-bold text-lg tracking-wide outline-hidden text-center placeholder-gray-500 shadow-inner"
+              className="w-full px-3 py-2 bg-[#090c14] border-2 border-gray-600 focus:border-yellow-400 text-white font-ui font-bold text-sm outline-hidden tracking-wide transition-colors"
             />
             {error && (
-              <p className="text-red-400 font-ui font-bold text-xs mt-1 text-center animate-bounce">
+              <p className="text-red-400 text-xs font-bold mt-1 font-ui">
                 {error}
               </p>
             )}
@@ -127,7 +124,7 @@ export default function JoinModal({ isOpen, onJoined, roomId = 'MAIN' }) {
             type="submit"
             className="w-full py-3.5 sm:py-4 text-base font-arcade pixel-btn pixel-btn-gold text-black font-extrabold tracking-wider cursor-pointer shadow-lg mt-2"
           >
-            READY TO PULL! (เข้าห้อง {roomId})
+            READY TO PULL! (เข้าสู่สนามแข่ง)
           </button>
         </form>
       </div>

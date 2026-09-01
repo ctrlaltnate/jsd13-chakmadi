@@ -20,7 +20,7 @@ const io = new Server(server, {
     methods: ['GET', 'POST']
   },
   transports: ['websocket', 'polling'],
-  perMessageDeflate: false, // Disabling deflate prevents compression latency on high-frequency packets
+  perMessageDeflate: false,
   pingInterval: 10000,
   pingTimeout: 5000
 });
@@ -57,7 +57,7 @@ class Player {
     this.id = id;
     this.name = name;
     this.team = null; // 'red' | 'blue' | null
-    this.status = 'active'; // 'active' | 'eliminated' | 'spectator'
+    this.status = 'active'; // 'active' | 'eliminated' | 'spectator' | 'waiting_rejoin'
     this.avatar = avatar;
     this.roundPulls = 0;
     this.totalPulls = 0;
@@ -69,13 +69,11 @@ class Player {
   }
 }
 
-// MULTI-ROOM TOURNAMENT SYSTEM
-class Room {
-  constructor(id, hostToken = null) {
-    this.id = id;
+// UNIFIED MAIN GAME ROOM
+class GameRoom {
+  constructor() {
     this.status = 'LOBBY'; // 'LOBBY' | 'ROUND_STARTING' | 'ROUND_ACTIVE' | 'ROUND_ELIMINATION' | 'CHAMPIONSHIP'
     this.roundNumber = 1;
-    this.totalRounds = 0;
     this.roundDuration = 60; // seconds
     this.roundStartTime = 0;
     this.roundEndTime = 0;
@@ -86,14 +84,13 @@ class Room {
     this.teamRedPulls = 0;
     this.teamBluePulls = 0;
     this.players = {}; // socketId -> Player
-    this.hostToken = hostToken || ('ht_' + Math.random().toString(36).substr(2, 9)); // Persistent host secret
+    this.hostToken = 'ht_' + Math.random().toString(36).substr(2, 9); // Persistent host secret
     this.hostSocketId = null;
     this.hostName = '';
     this.eliminatedThisRound = [];
     this.survivorsThisRound = [];
     this.winnerTeam = null;
     this.champion = null;
-    this.lastActivity = Date.now();
   }
 
   getTeamCounts() {
@@ -116,7 +113,6 @@ class Room {
   getPublicState() {
     const counts = this.getTeamCounts();
     return {
-      roomId: this.id,
       status: this.status,
       roundNumber: this.roundNumber,
       roundDuration: this.roundDuration,
@@ -152,7 +148,7 @@ class Room {
   }
 
   broadcastState() {
-    io.to(this.id).emit('game_state', this.getPublicState());
+    io.emit('game_state', this.getPublicState());
   }
 
   // Split active survivors randomly into Team Red and Team Blue
@@ -165,82 +161,63 @@ class Room {
       [activePlayers[i], activePlayers[j]] = [activePlayers[j], activePlayers[i]];
     }
 
-    // Assign half to Red, half to Blue
-    activePlayers.forEach((p, idx) => {
-      p.team = idx % 2 === 0 ? 'red' : 'blue';
-      p.roundPulls = 0;
-    });
-
-    // Keep spectators / eliminated players teamless
-    Object.values(this.players).forEach(p => {
-      if (p.status !== 'active') {
-        p.team = null;
-        p.roundPulls = 0;
-      }
+    // Distribute evenly
+    activePlayers.forEach((player, index) => {
+      player.team = index % 2 === 0 ? 'red' : 'blue';
+      player.roundPulls = 0;
+      player.combo = 0;
     });
   }
 
   startRound() {
-    const activePlayers = Object.values(this.players).filter(p => p.status === 'active');
-    if (activePlayers.length < 2) {
-      return;
-    }
-
     this.assignTeams();
-
     this.status = 'ROUND_STARTING';
+    this.countdownStartTime = Date.now();
     this.ropePos = 0;
     this.teamRedScore = 0;
     this.teamBlueScore = 0;
     this.teamRedPulls = 0;
     this.teamBluePulls = 0;
-    this.winnerTeam = null;
-    this.eliminatedThisRound = [];
-    this.survivorsThisRound = [];
-    this.countdownStartTime = Date.now();
-
     this.broadcastState();
 
-    // 3-second countdown before live pull
+    // 3.5 seconds synchronized countdown
     setTimeout(() => {
-      if (this.status !== 'ROUND_STARTING') return;
+      if (this.status === 'ROUND_STARTING') {
+        this.status = 'ROUND_ACTIVE';
+        this.roundStartTime = Date.now();
+        this.roundEndTime = this.roundStartTime + (this.roundDuration * 1000);
+        
+        // Reset next bot pull times
+        Object.values(this.players).forEach(p => {
+          if (p.isBot && p.status === 'active') {
+            p.nextBotPullTime = this.roundStartTime + Math.floor(Math.random() * 200);
+          }
+        });
 
-      this.status = 'ROUND_ACTIVE';
-      this.roundStartTime = Date.now();
-      this.roundEndTime = this.roundStartTime + (this.roundDuration * 1000);
-
-      // Initialize bot pull timers
-      const now = Date.now();
-      Object.values(this.players).forEach(p => {
-        if (p.isBot && p.status === 'active') {
-          p.nextBotPullTime = now + 100 + Math.random() * 300;
-        }
-      });
-
-      this.broadcastState();
-    }, 3000);
+        this.broadcastState();
+        io.emit('round_started');
+      }
+    }, 3500);
   }
 
   endRound(reason = 'time_up') {
     if (this.status !== 'ROUND_ACTIVE') return;
 
+    this.status = 'ROUND_ELIMINATION';
+    this.updateWeightedScores();
+
     let winner = null;
-    if (this.ropePos < -0.1) {
+    if (this.teamRedScore > this.teamBlueScore || this.ropePos <= -98) {
       winner = 'red';
-    } else if (this.ropePos > 0.1) {
+    } else if (this.teamBlueScore > this.teamRedScore || this.ropePos >= 98) {
       winner = 'blue';
     } else {
-      if (this.teamRedScore > this.teamBlueScore) {
-        winner = 'red';
-      } else if (this.teamBlueScore > this.teamRedScore) {
-        winner = 'blue';
-      } else {
-        winner = Math.random() < 0.5 ? 'red' : 'blue';
-      }
+      // Tie breaker: sudden coin flip
+      winner = Math.random() < 0.5 ? 'red' : 'blue';
     }
 
     this.winnerTeam = winner;
-    this.status = 'ROUND_ELIMINATION';
+    io.emit('round_ended', { winnerTeam: winner, reason });
 
     const eliminated = [];
     const survivors = [];
@@ -326,112 +303,74 @@ class Room {
   }
 }
 
-// Global Rooms Map
-const rooms = new Map();
-const socketToRoom = new Map();
+// Single Unified Main Room
+const mainRoom = new GameRoom();
 
-function generateRoomCode() {
-  let code;
-  let attempts = 0;
-  do {
-    const num = Math.floor(100 + Math.random() * 900); // 100 to 999
-    code = `JSD${num}`;
-    attempts++;
-  } while (rooms.has(code) && attempts < 100);
-  return code;
-}
-
-function getOrCreateRoom(rawRoomId = 'MAIN') {
-  let cleanId = (rawRoomId || 'MAIN').toString().trim().toUpperCase().slice(0, 12);
-  if (!cleanId || cleanId === 'NEW') {
-    cleanId = generateRoomCode();
-  }
-  if (!rooms.has(cleanId)) {
-    rooms.set(cleanId, new Room(cleanId));
-  }
-  const room = rooms.get(cleanId);
-  room.lastActivity = Date.now();
-  return room;
-}
-
-// Authoritative Physics Loop for all active rooms (20Hz)
+// Authoritative Physics Loop (20Hz)
 setInterval(() => {
   const now = Date.now();
-  for (const room of rooms.values()) {
-    if (room.status === 'ROUND_ACTIVE') {
-      // 1. Process Bots
-      Object.values(room.players).forEach(p => {
-        if (p.isBot && p.status === 'active' && now >= p.nextBotPullTime) {
-          room.handlePull(p.id, now);
-          p.nextBotPullTime = now + p.botPullInterval + (Math.random() * 40 - 20);
-        }
-      });
-
-      // 2. Physics computation for rope based on Weighted Average Score
-      const counts = room.getTeamCounts();
-      const redAvg = room.teamRedPulls / counts.red;
-      const blueAvg = room.teamBluePulls / counts.blue;
-      const avgDiff = blueAvg - redAvg;
-      const targetPos = Math.max(-100, Math.min(100, avgDiff * 6.5));
-
-      room.ropePos += (targetPos - room.ropePos) * 0.15;
-
-      // Check Knockout
-      if (room.ropePos <= -98) {
-        room.ropePos = -100;
-        room.endRound('knockout_red');
-        continue;
-      } else if (room.ropePos >= 98) {
-        room.ropePos = 100;
-        room.endRound('knockout_blue');
-        continue;
+  if (mainRoom.status === 'ROUND_ACTIVE') {
+    // 1. Process Bots
+    Object.values(mainRoom.players).forEach(p => {
+      if (p.isBot && p.status === 'active' && now >= p.nextBotPullTime) {
+        mainRoom.handlePull(p.id, now);
+        p.nextBotPullTime = now + p.botPullInterval + (Math.random() * 40 - 20);
       }
+    });
 
-      // Check Time Up
-      if (now >= room.roundEndTime) {
-        room.endRound('time_up');
-        continue;
-      }
+    // 2. Physics computation for rope based on Weighted Average Score
+    const counts = mainRoom.getTeamCounts();
+    const redAvg = mainRoom.teamRedPulls / counts.red;
+    const blueAvg = mainRoom.teamBluePulls / counts.blue;
+    const avgDiff = blueAvg - redAvg;
+    const targetPos = Math.max(-100, Math.min(100, avgDiff * 6.5));
 
-      // Real-time individual player pull tracking
-      const playerPulls = {};
-      for (const p of Object.values(room.players)) {
-        if (p.status === 'active') {
-          playerPulls[p.id] = { roundPulls: p.roundPulls, totalPulls: p.totalPulls };
-        }
-      }
+    mainRoom.ropePos += (targetPos - mainRoom.ropePos) * 0.15;
 
-      // High-frequency volatile sync to players in this room only
-      io.to(room.id).volatile.emit('physics_tick', {
-        ropePos: room.ropePos,
-        teamRedScore: room.teamRedScore,
-        teamBlueScore: room.teamBlueScore,
-        teamRedPulls: room.teamRedPulls,
-        teamBluePulls: room.teamBluePulls,
-        teamRedCount: counts.actualRed,
-        teamBlueCount: counts.actualBlue,
-        playerPulls,
-        serverTime: now
-      });
+    // Check Knockout
+    if (mainRoom.ropePos <= -98) {
+      mainRoom.ropePos = -100;
+      mainRoom.endRound('knockout_red');
+      return;
+    } else if (mainRoom.ropePos >= 98) {
+      mainRoom.ropePos = 100;
+      mainRoom.endRound('knockout_blue');
+      return;
     }
+
+    // Check Time Up
+    if (now >= mainRoom.roundEndTime) {
+      mainRoom.endRound('time_up');
+      return;
+    }
+
+    // Real-time individual player pull tracking
+    const playerPulls = {};
+    for (const p of Object.values(mainRoom.players)) {
+      if (p.status === 'active') {
+        playerPulls[p.id] = { roundPulls: p.roundPulls, totalPulls: p.totalPulls };
+      }
+    }
+
+    // High-frequency volatile sync to all connected clients
+    io.volatile.emit('physics_tick', {
+      ropePos: mainRoom.ropePos,
+      teamRedScore: mainRoom.teamRedScore,
+      teamBlueScore: mainRoom.teamBlueScore,
+      teamRedPulls: mainRoom.teamRedPulls,
+      teamBluePulls: mainRoom.teamBluePulls,
+      teamRedCount: counts.actualRed,
+      teamBlueCount: counts.actualBlue,
+      playerPulls,
+      serverTime: now
+    });
   }
 }, 50);
 
-// Clean up inactive empty rooms every 30 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [roomId, room] of rooms.entries()) {
-    if (roomId !== 'MAIN' && Object.keys(room.players).length === 0 && now - room.lastActivity > 1800000) {
-      rooms.delete(roomId);
-    }
-  }
-}, 1800000);
-
 // SOCKET.IO EVENT ROUTING
 io.on('connection', (socket) => {
-  // Send initial room state upon connection
-  const initialRoom = getOrCreateRoom('MAIN');
-  socket.emit('game_state', initialRoom.getPublicState());
+  // Send initial game state upon connection
+  socket.emit('game_state', mainRoom.getPublicState());
 
   // Clock sync request
   socket.on('sync_time', (clientSendTime) => {
@@ -441,163 +380,71 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Player joins a room
-  socket.on('join_game', ({ name, avatar = 0, roomId = null, hostToken = null }) => {
-    const room = getOrCreateRoom(roomId);
-    
-    // Leave previous room if any
-    const oldRoomId = socketToRoom.get(socket.id);
-    if (oldRoomId && oldRoomId !== room.id && rooms.has(oldRoomId)) {
-      const oldRoom = rooms.get(oldRoomId);
-      delete oldRoom.players[socket.id];
-      if (oldRoom.hostSocketId === socket.id) {
-        oldRoom.hostSocketId = null;
-      }
-      socket.leave(oldRoom.id);
-      oldRoom.broadcastState();
-    }
-
-    socket.join(room.id);
-    socketToRoom.set(socket.id, room.id);
-
+  // Player joins the game
+  socket.on('join_game', ({ name, avatar = 0, hostToken = null }) => {
     const sanitizedName = (name || 'Fighter').trim().slice(0, 14);
 
-    if (room.players[socket.id]) {
-      room.players[socket.id].name = sanitizedName;
-      room.players[socket.id].avatar = avatar || 0;
+    if (mainRoom.players[socket.id]) {
+      mainRoom.players[socket.id].name = sanitizedName;
+      mainRoom.players[socket.id].avatar = avatar || 0;
     } else {
       const player = new Player(socket.id, sanitizedName, false, avatar || 0);
-      if (room.status !== 'LOBBY') {
+      if (mainRoom.status !== 'LOBBY') {
         player.status = 'spectator';
       }
-      room.players[socket.id] = player;
+      mainRoom.players[socket.id] = player;
     }
 
     // Persistent host recognition:
     // 1. If client sends matching hostToken -> restore as host!
-    // 2. If room has no active host and no host registered yet -> first player is host!
+    // 2. If no active host and no host has registered yet -> first player is host!
     let isHost = false;
-    if (hostToken && hostToken === room.hostToken) {
-      room.hostSocketId = socket.id;
-      room.hostName = sanitizedName;
+    if (hostToken && hostToken === mainRoom.hostToken) {
+      mainRoom.hostSocketId = socket.id;
+      mainRoom.hostName = sanitizedName;
       isHost = true;
-    } else if (!room.hostSocketId && !room.hostName) {
-      room.hostSocketId = socket.id;
-      room.hostName = sanitizedName;
+    } else if (!mainRoom.hostSocketId && !mainRoom.hostName) {
+      mainRoom.hostSocketId = socket.id;
+      mainRoom.hostName = sanitizedName;
       isHost = true;
-    } else if (room.hostSocketId === socket.id) {
+    } else if (mainRoom.hostSocketId === socket.id) {
       isHost = true;
     }
 
     socket.emit('join_confirmed', {
-      player: room.players[socket.id],
+      player: mainRoom.players[socket.id],
       isHost,
-      hostToken: isHost ? room.hostToken : null,
-      roomId: room.id
+      hostToken: isHost ? mainRoom.hostToken : null
     });
 
-    room.broadcastState();
+    mainRoom.broadcastState();
   });
 
-  // Explicit Create Room request
-  socket.on('create_room', ({ name, avatar = 0 }, callback) => {
-    const newRoomCode = generateRoomCode();
-    const room = getOrCreateRoom(newRoomCode);
-
-    // Leave previous room if any
-    const oldRoomId = socketToRoom.get(socket.id);
-    if (oldRoomId && rooms.has(oldRoomId)) {
-      const oldRoom = rooms.get(oldRoomId);
-      delete oldRoom.players[socket.id];
-      if (oldRoom.hostSocketId === socket.id) {
-        oldRoom.hostSocketId = null;
-      }
-      socket.leave(oldRoom.id);
-      oldRoom.broadcastState();
-    }
-
-    socket.join(room.id);
-    socketToRoom.set(socket.id, room.id);
-
-    const sanitizedName = (name || 'Room Host').trim().slice(0, 14);
-    const player = new Player(socket.id, sanitizedName, false, avatar || 0);
-    room.players[socket.id] = player;
-    room.hostSocketId = socket.id;
-    room.hostName = sanitizedName;
-
-    socket.emit('join_confirmed', {
-      player,
-      isHost: true,
-      hostToken: room.hostToken,
-      roomId: room.id
-    });
-
-    room.broadcastState();
-
-    if (typeof callback === 'function') {
-      callback({ roomId: room.id, hostToken: room.hostToken });
-    }
-  });
-
-  // Switch Room
-  socket.on('switch_room', (newRoomId) => {
-    const targetRoom = getOrCreateRoom(newRoomId);
-    const currentRoomId = socketToRoom.get(socket.id);
-    let existingPlayer = null;
-
-    if (currentRoomId && rooms.has(currentRoomId)) {
-      const currentRoom = rooms.get(currentRoomId);
-      existingPlayer = currentRoom.players[socket.id];
-      delete currentRoom.players[socket.id];
-      if (currentRoom.hostSocketId === socket.id) {
-        currentRoom.hostSocketId = null;
-      }
-      socket.leave(currentRoom.id);
-      currentRoom.broadcastState();
-    }
-
-    socket.join(targetRoom.id);
-    socketToRoom.set(socket.id, targetRoom.id);
-
-    if (existingPlayer) {
-      targetRoom.players[socket.id] = existingPlayer;
-    }
-
-    targetRoom.broadcastState();
-  });
-
-  // Re-join newly started tournament (Non-host confirmation)
+  // Non-host player confirms ready for next round
   socket.on('rejoin_game', () => {
-    const roomId = socketToRoom.get(socket.id);
-    const room = rooms.get(roomId);
-    if (room && room.players[socket.id]) {
-      room.players[socket.id].status = 'active';
-      room.players[socket.id].team = null;
-      room.players[socket.id].roundPulls = 0;
-      room.players[socket.id].totalPulls = 0;
-      room.broadcastState();
+    if (mainRoom.players[socket.id]) {
+      mainRoom.players[socket.id].status = 'active';
+      mainRoom.players[socket.id].team = null;
+      mainRoom.players[socket.id].roundPulls = 0;
+      mainRoom.players[socket.id].totalPulls = 0;
+      mainRoom.broadcastState();
     }
   });
 
   // Update Player Name
   socket.on('update_name', (newName) => {
-    const roomId = socketToRoom.get(socket.id);
-    const room = rooms.get(roomId);
-    if (room && room.players[socket.id]) {
+    if (mainRoom.players[socket.id]) {
       const sanitized = (newName || '').trim().slice(0, 14);
       if (sanitized) {
-        room.players[socket.id].name = sanitized;
-        room.broadcastState();
+        mainRoom.players[socket.id].name = sanitized;
+        mainRoom.broadcastState();
       }
     }
   });
 
   // Pull action
   socket.on('pull', (clientTime, callback) => {
-    const roomId = socketToRoom.get(socket.id);
-    const room = rooms.get(roomId);
-    if (!room) return;
-    const result = room.handlePull(socket.id, clientTime);
+    const result = mainRoom.handlePull(socket.id, clientTime);
     if (typeof callback === 'function') {
       callback(result);
     }
@@ -605,20 +452,15 @@ io.on('connection', (socket) => {
 
   // Spectator cheer
   socket.on('cheer', ({ team, emote }) => {
-    const roomId = socketToRoom.get(socket.id);
-    if (roomId) {
-      io.to(roomId).emit('cheer_event', { team, emote, from: socket.id });
-    }
+    io.emit('cheer_event', { team, emote, from: socket.id });
   });
 
   // Add bots
   socket.on('add_bots', (count = 5) => {
-    const roomId = socketToRoom.get(socket.id);
-    const room = rooms.get(roomId);
-    if (!room || room.status !== 'LOBBY') return;
+    if (mainRoom.status !== 'LOBBY' || mainRoom.hostSocketId !== socket.id) return;
 
     const availableNames = [...BOT_NAMES].sort(() => 0.5 - Math.random());
-    const existingNames = new Set(Object.values(room.players).map(p => p.name));
+    const existingNames = new Set(Object.values(mainRoom.players).map(p => p.name));
     let added = 0;
 
     for (const bName of availableNames) {
@@ -626,123 +468,100 @@ io.on('connection', (socket) => {
       if (existingNames.has(bName)) continue;
       const botId = `bot_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
       const avatar = Math.floor(Math.random() * 6);
-      room.players[botId] = new Player(botId, bName, true, avatar);
+      mainRoom.players[botId] = new Player(botId, bName, true, avatar);
       added++;
     }
 
-    room.broadcastState();
+    mainRoom.broadcastState();
   });
 
   // Clear bots
   socket.on('clear_bots', () => {
-    const roomId = socketToRoom.get(socket.id);
-    const room = rooms.get(roomId);
-    if (!room || room.status !== 'LOBBY') return;
+    if (mainRoom.status !== 'LOBBY' || mainRoom.hostSocketId !== socket.id) return;
 
-    Object.keys(room.players).forEach(id => {
-      if (room.players[id].isBot) {
-        delete room.players[id];
+    Object.keys(mainRoom.players).forEach(id => {
+      if (mainRoom.players[id].isBot) {
+        delete mainRoom.players[id];
       }
     });
 
-    room.broadcastState();
+    mainRoom.broadcastState();
   });
 
   // Start Tournament
   socket.on('start_tournament', () => {
-    const roomId = socketToRoom.get(socket.id);
-    const room = rooms.get(roomId);
-    if (room && room.status === 'LOBBY' && room.hostSocketId === socket.id) {
-      room.roundNumber = 1;
-      room.champion = null;
-      Object.values(room.players).forEach(p => {
+    if (mainRoom.status === 'LOBBY' && mainRoom.hostSocketId === socket.id) {
+      mainRoom.roundNumber = 1;
+      mainRoom.champion = null;
+      Object.values(mainRoom.players).forEach(p => {
         if (p.status === 'active') {
           p.roundPulls = 0;
           p.totalPulls = 0;
         }
       });
-      room.startRound();
+      mainRoom.startRound();
     }
   });
 
   // Set round duration
   socket.on('set_round_duration', (durationSec) => {
-    const roomId = socketToRoom.get(socket.id);
-    const room = rooms.get(roomId);
-    if (room && room.status === 'LOBBY' && room.hostSocketId === socket.id) {
-      room.roundDuration = Math.max(10, Math.min(300, parseInt(durationSec, 10) || 60));
-      room.broadcastState();
+    if (mainRoom.status === 'LOBBY' && mainRoom.hostSocketId === socket.id) {
+      mainRoom.roundDuration = Math.max(10, Math.min(300, parseInt(durationSec, 10) || 60));
+      mainRoom.broadcastState();
     }
   });
 
-  // Reset tournament (Host only: non-host players must click re-join)
+  // Reset tournament (Host only: non-host players confirm with "พร้อมเล่นรอบใหม่")
   socket.on('reset_tournament', () => {
-    const roomId = socketToRoom.get(socket.id);
-    const room = rooms.get(roomId);
-    if (!room || room.hostSocketId !== socket.id) return;
+    if (mainRoom.hostSocketId !== socket.id) return;
 
-    room.status = 'LOBBY';
-    room.roundNumber = 1;
-    room.ropePos = 0;
-    room.teamRedScore = 0;
-    room.teamBlueScore = 0;
-    room.teamRedPulls = 0;
-    room.teamBluePulls = 0;
-    room.winnerTeam = null;
-    room.champion = null;
+    mainRoom.status = 'LOBBY';
+    mainRoom.roundNumber = 1;
+    mainRoom.ropePos = 0;
+    mainRoom.teamRedScore = 0;
+    mainRoom.teamBlueScore = 0;
+    mainRoom.teamRedPulls = 0;
+    mainRoom.teamBluePulls = 0;
+    mainRoom.winnerTeam = null;
+    mainRoom.champion = null;
 
-    // Host remains active in lobby.
-    // All non-host players are marked 'waiting_rejoin' so they must click "เข้าห้องใหม่" to join!
-    Object.values(room.players).forEach(p => {
+    Object.values(mainRoom.players).forEach(p => {
       p.roundPulls = 0;
       p.totalPulls = 0;
       p.team = null;
-      if (p.id === room.hostSocketId || p.isBot) {
+      if (p.id === mainRoom.hostSocketId || p.isBot) {
         p.status = 'active';
       } else {
         p.status = 'waiting_rejoin';
       }
     });
 
-    room.broadcastState();
+    mainRoom.broadcastState();
   });
 
   // Leave Game
   socket.on('leave_game', () => {
-    const roomId = socketToRoom.get(socket.id);
-    const room = rooms.get(roomId);
-    if (room) {
-      delete room.players[socket.id];
-      if (room.hostSocketId === socket.id) {
-        // DO NOT reassign hostToken! Keep it for the original creator when they return!
-        room.hostSocketId = null;
-      }
-      room.broadcastState();
+    delete mainRoom.players[socket.id];
+    if (mainRoom.hostSocketId === socket.id) {
+      mainRoom.hostSocketId = null;
     }
-    socketToRoom.delete(socket.id);
-    socket.leave(roomId);
+    mainRoom.broadcastState();
   });
 
   // Disconnect
   socket.on('disconnect', () => {
-    const roomId = socketToRoom.get(socket.id);
-    const room = rooms.get(roomId);
-    if (room) {
-      delete room.players[socket.id];
-      if (room.hostSocketId === socket.id) {
-        // Host temporarily disconnected/refreshed - preserve hostToken!
-        room.hostSocketId = null;
-      }
-      room.broadcastState();
+    delete mainRoom.players[socket.id];
+    if (mainRoom.hostSocketId === socket.id) {
+      mainRoom.hostSocketId = null;
     }
-    socketToRoom.delete(socket.id);
+    mainRoom.broadcastState();
   });
 });
 
 // REST endpoint for status & network info
 app.get('/api/info', (req, res) => {
   res.json({
-    totalRooms: rooms.size,
+    status: 'online',
     localIp,
     port: PORT
   });
@@ -763,7 +582,7 @@ if (fs.existsSync(clientDistPath)) {
 
 server.listen(PORT, () => {
   console.log(`=============================================`);
-  console.log(`🎮 CROWD TUG-OF-WAR SERVER RUNNING (MULTI-ROOM)`);
+  console.log(`🎮 CROWD TUG-OF-WAR SERVER RUNNING (UNIFIED ARENA)`);
   console.log(`Local:   http://localhost:${PORT}`);
   console.log(`Network: http://${localIp}:${PORT}`);
   console.log(`=============================================`);

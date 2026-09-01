@@ -11,6 +11,7 @@ export default function ChampionScreen({
   players = [],
   isHost = false,
   currentSocketId = null,
+  onRejoinGame = null,
   onLeaveGame = null
 }) {
   useEffect(() => {
@@ -43,18 +44,22 @@ export default function ChampionScreen({
       <div className="flex justify-center my-1">
         <img
           src={badgeImg}
-          alt="Winner Tug-of-War Trophy Badge"
-          className="w-44 sm:w-56 h-auto drop-shadow-[0_0_25px_rgba(234,179,8,0.8)] animate-bounce"
+          alt="Winner Badge"
+          className="w-24 h-24 sm:w-28 sm:h-28 image-pixelated animate-bounce filter drop-shadow-[0_0_12px_rgba(250,204,21,0.8)]"
         />
       </div>
 
+      {/* Header Banner */}
       <div>
-        <div className="inline-block px-3 py-1 bg-yellow-400 text-black font-ui text-xs font-extrabold uppercase mb-2 pixel-border">
-          TOURNAMENT CHAMPION • ผู้ชนะเลิศทัวร์นาเมนต์
+        <div className="inline-block px-3 py-1 bg-yellow-400 text-black font-arcade text-xs sm:text-sm uppercase pixel-border">
+          TOURNAMENT COMPLETE
         </div>
-        <h1 className="text-3xl sm:text-5xl font-arcade text-white pixel-text-shadow text-glow-gold">
+        <h1 className="text-3xl sm:text-4xl font-arcade text-white pixel-text-shadow mt-2 tracking-wide">
           ULTIMATE CHAMPION!
         </h1>
+        <p className="font-ui text-sm sm:text-base text-yellow-300 font-bold">
+          ผู้ชนะเลิศอันดับ 1 ของการแข่งขันชักเย่อ
+        </p>
       </div>
 
       {/* Champion Highlight Box */}
@@ -102,7 +107,7 @@ export default function ChampionScreen({
             }}
             className="w-full py-3.5 sm:py-4 pixel-btn pixel-btn-gold text-black text-sm sm:text-base font-arcade font-extrabold cursor-pointer tracking-wider shadow-lg"
           >
-            🔄 เริ่มทัวร์นาเมนต์ใหม่ / กลับล็อบบี้ (NEW TOURNAMENT)
+            🔄 เริ่มการแข่งขันรอบใหม่ (NEW GAME)
           </button>
         ) : (
           <div className="space-y-2">
@@ -110,33 +115,19 @@ export default function ChampionScreen({
               type="button"
               onClick={() => {
                 soundService.playVictory();
-                if (onRejoinGame) onRejoinGame();
+                if (onRejoinGame) {
+                  onRejoinGame();
+                } else {
+                  socketService.rejoinGame();
+                }
               }}
               className="w-full py-3.5 sm:py-4 pixel-btn pixel-btn-gold text-black text-sm sm:text-base font-arcade font-extrabold cursor-pointer tracking-wider shadow-lg"
             >
-              🎮 กดเข้าห้องใหม่ (RE-JOIN NEW GAME)
+              🎮 พร้อมเล่นรอบใหม่ (READY FOR NEXT ROUND)
             </button>
-
-            <div className="flex flex-wrap gap-2 justify-center">
-              {onCreateRoom && (
-                <button
-                  type="button"
-                  onClick={onCreateRoom}
-                  className="flex-1 min-w-[140px] py-2 px-3 pixel-btn pixel-btn-blue text-white text-xs font-ui font-extrabold cursor-pointer"
-                >
-                  ➕ สร้างห้องของตัวเอง
-                </button>
-              )}
-              {onOpenJoinModal && (
-                <button
-                  type="button"
-                  onClick={onOpenJoinModal}
-                  className="flex-1 min-w-[140px] py-2 px-3 pixel-btn bg-purple-700 hover:bg-purple-600 text-white text-xs font-ui font-extrabold cursor-pointer"
-                >
-                  🔑 เข้าห้องอื่น
-                </button>
-              )}
-            </div>
+            <p className="font-ui text-xs text-yellow-300 font-bold">
+              กดเพื่อยืนยันว่าพร้อมเล่นต่อในรอบใหม่
+            </p>
           </div>
         )}
 

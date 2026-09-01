@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { socketService } from './services/socket';
 import { soundService } from './services/sound';
 import JoinModal from './components/JoinModal';
-import JoinRoomModal from './components/JoinRoomModal';
-import WelcomeScreen from './components/WelcomeScreen';
 import LobbyScreen from './components/LobbyScreen';
 import Scoreboard from './components/Scoreboard';
 import TugCanvas from './components/TugCanvas';
@@ -39,7 +37,6 @@ export default function App() {
   const [currentSocketId, setCurrentSocketId] = useState(null);
   const [hasJoined, setHasJoined] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
-  const [showJoinRoomModal, setShowJoinRoomModal] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [playerAvatar, setPlayerAvatar] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
@@ -48,84 +45,19 @@ export default function App() {
   const [cheerParticles, setCheerParticles] = useState([]);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameInput, setEditNameInput] = useState('');
+  const [copiedLink, setCopiedLink] = useState(false);
 
-  // 6-Character Room Code Generator: JSD + 3 digits (e.g. JSD123, JSD888)
-  const generateJsdCode = () => {
-    const digits = Math.floor(100 + Math.random() * 900);
-    return `JSD${digits}`;
-  };
-
-  // Room Code: from ?room=... or localStorage, or null for first-time arrival
-  const [roomId, setRoomId] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    const roomParam = params.get('room');
-    if (roomParam) {
-      return roomParam.toUpperCase().slice(0, 12);
-    }
-    const savedRoom = localStorage.getItem('tug_room_id');
-    if (savedRoom) {
-      return savedRoom.toUpperCase().slice(0, 12);
-    }
-    return null; // When null, visitor sees WelcomeScreen to choose Create or Join Room
-  });
-
-  // Keep URL and localStorage in sync with current room code
-  useEffect(() => {
-    if (roomId) {
-      localStorage.setItem('tug_room_id', roomId);
-      const url = new URL(window.location.href);
-      url.searchParams.set('room', roomId);
-      window.history.replaceState({}, '', url.toString());
-    }
-  }, [roomId]);
-
-  // Switch or Join Room
-  const handleSwitchRoom = (newRoomCode) => {
-    let cleanRoom = (newRoomCode || '').trim().toUpperCase().slice(0, 12);
-    if (!cleanRoom) return;
-    if (/^\d{3}$/.test(cleanRoom)) {
-      cleanRoom = `JSD${cleanRoom}`;
-    }
-    setRoomId(cleanRoom);
-    soundService.playVictory();
-    const savedName = localStorage.getItem('tug_player_name') || playerName;
-    const savedAvatar = parseInt(localStorage.getItem('tug_player_avatar') || `${playerAvatar}`, 10);
-    if (savedName) {
-      socketService.switchRoom(cleanRoom);
-      setHasJoined(true);
-    } else {
-      setShowJoinModal(true);
-    }
-  };
-
-  // Create Room as Owner (JSD + 3 digits)
-  const handleCreateRoom = () => {
-    const newRoomCode = generateJsdCode();
-    setRoomId(newRoomCode);
-    soundService.playVictory();
-    const savedName = localStorage.getItem('tug_player_name');
-    const savedAvatar = parseInt(localStorage.getItem('tug_player_avatar') || '0', 10);
-    if (savedName) {
-      socketService.joinGame(savedName, savedAvatar, newRoomCode);
-      setHasJoined(true);
-      setShowJoinModal(false);
-    } else {
-      setShowJoinModal(true);
-    }
-  };
-
-  // Copy Room Link
-  const handleCopyRoomLink = () => {
-    if (!roomId) return;
-    const origin = window.location.origin;
-    const shareUrl = `${origin}/?room=${encodeURIComponent(roomId)}`;
+  // Copy Game Invite Link
+  const handleCopyInviteLink = () => {
+    const shareUrl = window.location.origin;
     try {
-      if (navigator.clipboard) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(shareUrl);
       }
     } catch (e) {}
+    setCopiedLink(true);
     soundService.playCheer();
-    alert(`📋 คัดลอกลิงก์ห้อง ${roomId} แล้ว! ส่งต่อให้เพื่อนเข้าเล่นได้ทันที`);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   // Socket event listeners
@@ -136,15 +68,13 @@ export default function App() {
       setCurrentSocketId(socket.id);
       const savedName = localStorage.getItem('tug_player_name');
       const savedAvatar = parseInt(localStorage.getItem('tug_player_avatar') || '0', 10);
-      if (roomId) {
-        if (savedName) {
-          setPlayerName(savedName);
-          setPlayerAvatar(savedAvatar);
-          socketService.joinGame(savedName, savedAvatar, roomId);
-          setHasJoined(true);
-        } else {
-          setShowJoinModal(true);
-        }
+      if (savedName) {
+        setPlayerName(savedName);
+        setPlayerAvatar(savedAvatar);
+        socketService.joinGame(savedName, savedAvatar);
+        setHasJoined(true);
+      } else {
+        setShowJoinModal(true);
       }
     });
 
@@ -177,17 +107,14 @@ export default function App() {
       });
     });
 
-    socket.on('join_confirmed', ({ player, isHost, hostToken, roomId: confirmedRoomId }) => {
+    socket.on('join_confirmed', ({ player, isHost, hostToken }) => {
       if (player) {
         setPlayerName(player.name);
         setPlayerAvatar(player.avatar);
         setHasJoined(true);
         setShowJoinModal(false);
-        if (confirmedRoomId) {
-          setRoomId(confirmedRoomId);
-        }
-        if (isHost && hostToken && confirmedRoomId) {
-          localStorage.setItem(`tug_host_token_${confirmedRoomId}`, hostToken);
+        if (isHost && hostToken) {
+          localStorage.setItem('tug_host_token', hostToken);
         }
       }
     });
@@ -221,7 +148,7 @@ export default function App() {
       socket.off('round_started');
       socket.off('round_ended');
     };
-  }, [roomId]);
+  }, []);
 
   // Audio Toggles
   const handleToggleMute = () => {
@@ -242,11 +169,7 @@ export default function App() {
       soundService.playWarning();
       socketService.leaveGame();
       setHasJoined(false);
-      localStorage.removeItem('tug_room_id');
-      setRoomId(null);
-      const url = new URL(window.location.href);
-      url.searchParams.delete('room');
-      window.history.replaceState({}, '', url.toString());
+      setShowJoinModal(true);
     }
   };
 
@@ -281,56 +204,32 @@ export default function App() {
       <header className="sticky top-0 z-40 bg-[#0f1322]/95 backdrop-blur-xs border-b-2 sm:border-b-3 border-[#334155] px-2.5 sm:px-4 py-1 sm:py-1.5 select-none shadow-md shrink-0">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
           {/* Logo & Title */}
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => !roomId && setRoomId(null)}>
+          <div className="flex items-center gap-2">
             <span className="text-xl sm:text-2xl animate-pulse">🥊</span>
             <div>
               <div className="font-arcade text-xs sm:text-sm text-white pixel-text-shadow">
                 CROWD TUG-OF-WAR
               </div>
               <div className="font-ui text-[11px] text-yellow-300 font-bold hidden xs:block">
-                PHYSICS EDITION
+                UNIFIED ARENA
               </div>
             </div>
           </div>
 
-          {/* Action Buttons & Room Tools */}
+          {/* Action Buttons & Player Profile */}
           <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Create Room Button */}
+            {/* Share Link Button */}
             <button
               type="button"
-              onClick={handleCreateRoom}
-              title="สร้างห้องแข่งขันใหม่ (Create New Room)"
-              className="px-2 py-1 text-xs font-ui font-extrabold pixel-btn pixel-btn-gold text-black cursor-pointer flex items-center gap-1"
+              onClick={handleCopyInviteLink}
+              title="คัดลอกลิงก์เกมให้เพื่อนเข้าเล่น"
+              className="px-2.5 py-1 text-xs font-ui font-extrabold pixel-btn pixel-btn-gold text-black cursor-pointer flex items-center gap-1 shadow-sm"
             >
-              <span>➕</span>
-              <span className="hidden xs:inline">สร้างห้อง</span>
+              <span>{copiedLink ? '✅' : '📋'}</span>
+              <span className="hidden xs:inline">{copiedLink ? 'คัดลอกแล้ว!' : 'แชร์ลิงก์เกม'}</span>
             </button>
 
-            {/* Join Room Button */}
-            <button
-              type="button"
-              onClick={() => setShowJoinRoomModal(true)}
-              title="กดเข้าห้องด้วยรหัส 6 ตัว (Join Room)"
-              className="px-2 py-1 text-xs font-ui font-extrabold pixel-btn pixel-btn-blue text-white cursor-pointer flex items-center gap-1"
-            >
-              <span>🔑</span>
-              <span className="hidden xs:inline">เข้าห้อง</span>
-            </button>
-
-            {/* Room Code Badge (Clickable to copy link) */}
-            {roomId && (
-              <button
-                type="button"
-                onClick={handleCopyRoomLink}
-                className="flex items-center gap-1 px-2 py-1 bg-[#0a0d18] border-2 border-yellow-400 text-xs font-arcade text-yellow-300 shadow-sm cursor-pointer hover:bg-yellow-950/40"
-                title="คลิกเพื่อคัดลอกลิงก์ห้องแข่งขัน"
-              >
-                <span>🔑</span>
-                <span>{roomId}</span>
-              </button>
-            )}
-
-            {/* Player Badge & Audio/Visual Toggles */}
+            {/* Player Badge & Name Edit */}
             {myPlayer && (
               isEditingName ? (
                 <form onSubmit={handleSaveEditName} className="flex items-center gap-1">
@@ -372,6 +271,16 @@ export default function App() {
               )
             )}
 
+            {/* CRT Toggle */}
+            <button
+              type="button"
+              onClick={() => setScanlines(!scanlines)}
+              title="Toggle CRT Scanlines"
+              className={`px-2 py-1 text-xs font-ui font-extrabold pixel-btn cursor-pointer ${scanlines ? 'pixel-btn-gold text-black' : ''}`}
+            >
+              CRT
+            </button>
+
             {/* SFX Mute Button */}
             <button
               type="button"
@@ -397,7 +306,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleLeaveGame}
-                title="ออกจากห้อง (Leave Room)"
+                title="ออกจากเกม (Leave Game)"
                 className="px-2 py-1 text-xs font-ui font-extrabold pixel-btn pixel-btn-red text-white cursor-pointer"
               >
                 🚪
@@ -409,18 +318,9 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className={`flex-1 max-w-6xl w-full mx-auto p-1 sm:p-2.5 flex flex-col ${gameState.status === 'ROUND_ACTIVE' ? 'justify-between overflow-hidden' : 'justify-center'}`}>
-        {/* FIRST-TIME / WELCOME GATEWAY (If no room chosen yet) */}
-        {!roomId && !hasJoined && (
-          <WelcomeScreen
-            onCreateRoom={handleCreateRoom}
-            onOpenJoinModal={() => setShowJoinRoomModal(true)}
-          />
-        )}
-
         {/* LOBBY STATE */}
-        {roomId && gameState.status === 'LOBBY' && (
+        {gameState.status === 'LOBBY' && (
           <LobbyScreen
-            roomId={roomId}
             players={gameState.players}
             isHost={isHost}
             roundDuration={gameState.roundDuration}
@@ -428,13 +328,11 @@ export default function App() {
             localIp={gameState.localIp}
             myPlayer={myPlayer}
             onLeaveGame={handleLeaveGame}
-            onSwitchRoom={handleSwitchRoom}
-            onCreateRoom={handleCreateRoom}
           />
         )}
 
         {/* ROUND STARTING (3...2...1 Countdown Overlay) */}
-        {roomId && gameState.status === 'ROUND_STARTING' && (
+        {gameState.status === 'ROUND_STARTING' && (
           <>
             <Scoreboard
               roundNumber={gameState.roundNumber}
@@ -463,7 +361,7 @@ export default function App() {
         )}
 
         {/* ROUND ACTIVE STATE - 3-Column layout on desktop, perfectly fits screen on mobile */}
-        {roomId && gameState.status === 'ROUND_ACTIVE' && (
+        {gameState.status === 'ROUND_ACTIVE' && (
           <div className="w-full flex flex-col lg:flex-row items-stretch justify-center gap-1.5 lg:gap-3 flex-1 overflow-hidden">
             {/* LEFT SIDEBAR: TEAM RED (DESKTOP) */}
             <div className="hidden lg:block w-56 xl:w-64 shrink-0 overflow-y-auto max-h-[82vh]">
@@ -523,7 +421,7 @@ export default function App() {
         )}
 
         {/* ROUND ELIMINATION / KNOCKOUT SUMMARY */}
-        {roomId && gameState.status === 'ROUND_ELIMINATION' && (
+        {gameState.status === 'ROUND_ELIMINATION' && (
           <RoundSummaryScreen
             roundNumber={gameState.roundNumber}
             winnerTeam={gameState.winnerTeam}
@@ -535,7 +433,7 @@ export default function App() {
         )}
 
         {/* CHAMPIONSHIP SHOWDOWN / TROPHY */}
-        {roomId && gameState.status === 'CHAMPIONSHIP' && (
+        {gameState.status === 'CHAMPIONSHIP' && (
           <ChampionScreen
             champion={gameState.champion}
             players={gameState.players}
@@ -543,10 +441,7 @@ export default function App() {
             currentSocketId={currentSocketId}
             onRejoinGame={() => {
               socketService.rejoinGame();
-              socketService.resetTournament();
             }}
-            onCreateRoom={handleCreateRoom}
-            onOpenJoinModal={() => setShowJoinRoomModal(true)}
             onLeaveGame={handleLeaveGame}
           />
         )}
@@ -559,17 +454,9 @@ export default function App() {
         </footer>
       )}
 
-      {/* Join Room by Code Modal */}
-      <JoinRoomModal
-        isOpen={showJoinRoomModal}
-        onClose={() => setShowJoinRoomModal(false)}
-        onJoinRoom={handleSwitchRoom}
-      />
-
       {/* Player Join Name Modal */}
       <JoinModal
-        isOpen={showJoinModal && !hasJoined && Boolean(roomId)}
-        roomId={roomId}
+        isOpen={showJoinModal && !hasJoined}
         onJoined={({ name, avatar }) => {
           setPlayerName(name);
           setPlayerAvatar(avatar);
